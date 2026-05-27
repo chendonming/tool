@@ -1,0 +1,1515 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>XML / JSON 结构查看器</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b1020;
+      --panel: rgba(13, 20, 40, 0.88);
+      --panel-2: rgba(19, 29, 56, 0.9);
+      --line: rgba(120, 146, 255, 0.18);
+      --line-strong: rgba(120, 146, 255, 0.35);
+      --text: #eff4ff;
+      --muted: #aab8dc;
+      --accent: #7aa2ff;
+      --accent-2: #6de2c3;
+      --warning: #ffb86c;
+      --danger: #ff7f96;
+      --shadow: 0 24px 60px rgba(2, 8, 23, 0.35);
+      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at top, rgba(122, 162, 255, 0.22), transparent 32%),
+        radial-gradient(circle at right, rgba(109, 226, 195, 0.18), transparent 24%),
+        linear-gradient(180deg, #08101f 0%, #0b1020 100%);
+      color: var(--text);
+    }
+
+    .page {
+      width: min(1320px, calc(100vw - 32px));
+      margin: 0 auto;
+      padding: 24px 0 40px;
+    }
+
+    .hero {
+      padding: 28px;
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      background: linear-gradient(180deg, rgba(17, 25, 47, 0.92), rgba(11, 16, 32, 0.92));
+      box-shadow: var(--shadow);
+    }
+
+    .hero h1 {
+      margin: 0 0 10px;
+      font-size: clamp(28px, 4vw, 42px);
+      line-height: 1.1;
+    }
+
+    .hero p {
+      margin: 0;
+      max-width: 880px;
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.7;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
+      gap: 18px;
+      margin-top: 18px;
+      align-items: start;
+    }
+
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      backdrop-filter: blur(16px);
+    }
+
+    .panel-header {
+      padding: 20px 22px 10px;
+    }
+
+    .panel-header h2 {
+      margin: 0;
+      font-size: 18px;
+    }
+
+    .panel-header p {
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    .panel-body {
+      padding: 0 22px 22px;
+    }
+
+    .dropzone {
+      position: relative;
+      border: 1.5px dashed var(--line-strong);
+      border-radius: 20px;
+      padding: 22px;
+      background: linear-gradient(180deg, rgba(122, 162, 255, 0.08), rgba(109, 226, 195, 0.05));
+      transition: 180ms ease;
+    }
+
+    .dropzone.active {
+      border-color: var(--accent-2);
+      background: linear-gradient(180deg, rgba(122, 162, 255, 0.15), rgba(109, 226, 195, 0.12));
+      transform: translateY(-1px);
+    }
+
+    .dropzone strong {
+      display: block;
+      font-size: 18px;
+      margin-bottom: 6px;
+    }
+
+    .dropzone p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.7;
+    }
+
+    .actions,
+    .toggle-grid,
+    .stats,
+    .outputs {
+      display: grid;
+      gap: 12px;
+    }
+
+    .actions {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      margin-top: 14px;
+    }
+
+    .actions .full {
+      grid-column: 1 / -1;
+    }
+
+    button,
+    .file-button {
+      border: 1px solid transparent;
+      border-radius: 14px;
+      padding: 12px 16px;
+      font: inherit;
+      color: var(--text);
+      cursor: pointer;
+      transition: 180ms ease;
+      text-align: center;
+      background: linear-gradient(180deg, rgba(122, 162, 255, 0.2), rgba(122, 162, 255, 0.12));
+    }
+
+    button:hover,
+    .file-button:hover {
+      transform: translateY(-1px);
+      border-color: rgba(255, 255, 255, 0.08);
+    }
+
+    button.secondary,
+    .file-button.secondary {
+      background: rgba(255, 255, 255, 0.04);
+      border-color: rgba(255, 255, 255, 0.08);
+    }
+
+    button.ghost {
+      background: transparent;
+      border-color: rgba(255, 255, 255, 0.08);
+    }
+
+    button:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    input[type="file"] {
+      display: none;
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 240px;
+      resize: vertical;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 18px;
+      padding: 16px;
+      font: 13px/1.7 Consolas, "Courier New", monospace;
+      color: var(--text);
+      background: rgba(4, 10, 22, 0.65);
+      outline: none;
+    }
+
+    textarea:focus {
+      border-color: rgba(122, 162, 255, 0.45);
+      box-shadow: 0 0 0 4px rgba(122, 162, 255, 0.08);
+    }
+
+    .toggle-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      margin-top: 14px;
+    }
+
+    .toggle {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      padding: 14px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.6;
+    }
+
+    .toggle input {
+      margin-top: 2px;
+      accent-color: var(--accent-2);
+    }
+
+    .toggle strong {
+      display: block;
+      color: var(--text);
+      font-size: 14px;
+      margin-bottom: 2px;
+    }
+
+    .status {
+      margin-top: 14px;
+      min-height: 46px;
+      padding: 12px 14px;
+      border-radius: 16px;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    .status.error {
+      border-color: rgba(255, 127, 150, 0.25);
+      background: rgba(255, 127, 150, 0.08);
+      color: #ffdbe3;
+    }
+
+    .status.success {
+      border-color: rgba(109, 226, 195, 0.25);
+      background: rgba(109, 226, 195, 0.08);
+      color: #d7fff4;
+    }
+
+    .stats {
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      padding: 0 22px 22px;
+    }
+
+    .stat-card {
+      padding: 16px;
+      border-radius: 18px;
+      background: var(--panel-2);
+      border: 1px solid var(--line);
+    }
+
+    .stat-card span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 6px;
+    }
+
+    .stat-card strong {
+      display: block;
+      font-size: clamp(18px, 2vw, 24px);
+      line-height: 1.2;
+      word-break: break-word;
+    }
+
+    .outputs {
+      grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
+      padding: 0 22px 22px;
+    }
+
+    .output-card {
+      min-height: 620px;
+      border-radius: 22px;
+      border: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(7, 14, 29, 0.92), rgba(7, 14, 29, 0.76));
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .output-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .output-toolbar h3 {
+      margin: 0;
+      font-size: 16px;
+    }
+
+    .output-toolbar small {
+      display: block;
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .output-body {
+      flex: 1;
+      overflow: auto;
+      padding: 16px 18px 18px;
+    }
+
+    .empty-state {
+      display: grid;
+      place-items: center;
+      height: 100%;
+      min-height: 340px;
+      color: var(--muted);
+      text-align: center;
+      line-height: 1.8;
+      padding: 24px;
+    }
+
+    .tree-node {
+      margin: 2px 0;
+    }
+
+    .tree-node > summary,
+    .tree-line {
+      list-style: none;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+      padding: 8px 10px;
+      border-radius: 12px;
+      transition: background 160ms ease;
+      cursor: default;
+    }
+
+    .tree-node > summary {
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .tree-node > summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .tree-node > summary::before {
+      content: "▸";
+      color: var(--muted);
+      font-size: 12px;
+      transform: translateY(-1px);
+      transition: transform 160ms ease;
+    }
+
+    details[open] > summary::before {
+      transform: rotate(90deg) translateX(1px);
+      transform-origin: center;
+    }
+
+    .tree-node > summary:hover,
+    .tree-line:hover {
+      background: rgba(255, 255, 255, 0.04);
+    }
+
+    .tree-children {
+      margin-left: 18px;
+      padding-left: 14px;
+      border-left: 1px dashed rgba(255, 255, 255, 0.1);
+    }
+
+    .node-name {
+      font-weight: 600;
+      font-family: Consolas, "Courier New", monospace;
+      color: #f7f9ff;
+      word-break: break-word;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      line-height: 1;
+      white-space: nowrap;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--muted);
+    }
+
+    .pill.count {
+      color: #d7ecff;
+      background: rgba(122, 162, 255, 0.12);
+      border-color: rgba(122, 162, 255, 0.26);
+    }
+
+    .pill.attr {
+      color: #ebf8ff;
+      background: rgba(120, 202, 255, 0.11);
+      border-color: rgba(120, 202, 255, 0.22);
+    }
+
+    .pill.text {
+      color: #e5fff7;
+      background: rgba(109, 226, 195, 0.11);
+      border-color: rgba(109, 226, 195, 0.22);
+    }
+
+    .pill.type {
+      color: #fff1d8;
+      background: rgba(255, 184, 108, 0.12);
+      border-color: rgba(255, 184, 108, 0.22);
+    }
+
+    pre {
+      margin: 0;
+      padding: 16px;
+      min-height: 100%;
+      border-radius: 18px;
+      background: rgba(4, 10, 22, 0.7);
+      color: #edf2ff;
+      font: 13px/1.75 Consolas, "Courier New", monospace;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .meta-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      margin-top: 12px;
+      color: var(--muted);
+      font-size: 12px;
+      flex-wrap: wrap;
+    }
+
+    .hint {
+      padding: 14px 16px;
+      border-radius: 18px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.7;
+      margin-top: 14px;
+    }
+
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      border: 0;
+    }
+
+    @media (max-width: 1100px) {
+      .layout,
+      .outputs {
+        grid-template-columns: 1fr;
+      }
+
+      .stats {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 720px) {
+      .page {
+        width: min(100vw - 20px, 100%);
+        padding-top: 10px;
+      }
+
+      .hero,
+      .panel-header,
+      .panel-body,
+      .stats,
+      .outputs {
+        padding-left: 16px;
+        padding-right: 16px;
+      }
+
+      .actions,
+      .toggle-grid,
+      .stats {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="hero">
+      <h1>XML / JSON 结构查看器</h1>
+      <p>
+        把 XML 或 JSON 内容（例如 KML、SVG、XSD、GeoJSON、普通接口响应等）拖进来，页面会只保留“结构信息”：节点层级、键名、属性名、重复次数、
+        文本或值类型占位，自动过滤掉大段正文、海量坐标和重复列表。这样你就能把“瘦身版结构摘要”发给 AI，而不是把整片数据洪流一股脑塞过去。
+      </p>
+    </section>
+
+    <section class="layout">
+      <section class="panel">
+        <div class="panel-header">
+          <h2>输入 XML / JSON</h2>
+          <p>支持拖拽文件、选择文件，或直接粘贴 XML / JSON 文本。只要内容合法，页面会自动识别格式并解析。</p>
+        </div>
+        <div class="panel-body">
+          <div id="dropzone" class="dropzone" tabindex="0" role="button" aria-label="拖拽 XML 或 JSON 文件到这里，或点击选择文件">
+            <strong>拖拽 XML / JSON 文件到这里</strong>
+            <p>也可以点击下方按钮选择文件。KML、GeoJSON、接口返回结果都可以，超长 coordinates 或大段字符串也会被优雅“消音”。</p>
+          </div>
+
+          <div class="actions">
+            <label class="file-button" for="fileInput">选择 XML / JSON 文件</label>
+            <button id="parseTextButton" class="secondary" type="button">解析输入内容</button>
+            <button id="sampleXmlButton" class="ghost" type="button">载入 XML 示例</button>
+            <button id="sampleJsonButton" class="ghost" type="button">载入 JSON 示例</button>
+            <button id="clearButton" class="ghost" type="button">清空</button>
+          </div>
+
+          <input id="fileInput" type="file" accept=".xml,.kml,.gpx,.svg,.xsd,.wsdl,.plist,.xaml,.json,.geojson,.topojson,text/xml,application/xml,application/json,text/json">
+
+          <label class="sr-only" for="xmlInput">XML / JSON 文本输入</label>
+          <textarea id="xmlInput" spellcheck="false" placeholder="也可以直接把 XML 或 JSON 粘贴到这里，然后点击“解析输入内容”。"></textarea>
+
+          <div class="toggle-grid">
+            <label class="toggle">
+              <input id="mergeSiblings" type="checkbox" checked>
+              <span>
+                <strong>合并相同兄弟节点</strong>
+                将同一层中结构一致的重复节点折叠为一条，并显示 ×数量。
+              </span>
+            </label>
+            <label class="toggle">
+              <input id="showAttributes" type="checkbox" checked>
+              <span>
+                <strong>显示 XML 属性名</strong>
+                仅对 XML 展示属性名，不展示属性值；JSON 键名会作为节点名始终显示。
+              </span>
+            </label>
+            <label class="toggle">
+              <input id="showTextMarkers" type="checkbox" checked>
+              <span>
+                <strong>显示文本 / 值类型</strong>
+                XML 仅标记“含文本”；JSON 显示对象、数组、字符串等类型，但不会展示真实内容。
+              </span>
+            </label>
+            <label class="toggle">
+              <input id="openTree" type="checkbox" checked>
+              <span>
+                <strong>默认展开前两层</strong>
+                结构太深时能更清爽；不勾选则全部折叠，从根开始慢慢看。
+              </span>
+            </label>
+          </div>
+
+          <div id="status" class="status">等待输入 XML 或 JSON。解析成功后，右侧会出现结构树和可复制的 AI 摘要。</div>
+
+          <div class="meta-row">
+            <span id="sourceMeta">当前来源：未载入</span>
+            <span id="sizeMeta">大小：-</span>
+          </div>
+
+          <div class="hint">
+            小贴士：如果你只是想把结构发给 AI，右侧的“AI 结构摘要”可以直接复制；它不会包含 XML 属性值、正文文本，
+            也不会包含 JSON 的真实值，只保留层级、键名、属性名、类型和重复模式；如果遇到 tree 这类递归嵌套结构，重复分支也会自动折叠。
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <h2>结构结果</h2>
+          <p>左边是可折叠的结构树，右边是适合直接复制给 AI 的文本摘要。两者都只保留 XML / JSON 的结构，不展示原始大段内容。</p>
+        </div>
+
+        <div id="stats" class="stats">
+          <div class="stat-card"><span>根节点</span><strong id="statRoot">-</strong></div>
+          <div class="stat-card"><span>原始节点数</span><strong id="statElements">-</strong></div>
+          <div class="stat-card"><span>压缩后节点</span><strong id="statCompressed">-</strong></div>
+          <div class="stat-card"><span>唯一结构数</span><strong id="statUnique">-</strong></div>
+          <div class="stat-card"><span>最大深度</span><strong id="statDepth">-</strong></div>
+        </div>
+
+        <div class="outputs">
+          <article class="output-card">
+            <div class="output-toolbar">
+              <div>
+                <h3>结构树</h3>
+                <small>展示 XML / JSON 层级、属性名、值类型占位与重复次数</small>
+              </div>
+              <button id="expandAllButton" class="secondary" type="button" disabled>展开/收起全部</button>
+            </div>
+            <div id="treeOutput" class="output-body">
+              <div class="empty-state">还没有结构结果。<br>请先上传 XML / JSON 文件或粘贴内容。</div>
+            </div>
+          </article>
+
+          <article class="output-card">
+            <div class="output-toolbar">
+              <div>
+                <h3>AI 结构摘要</h3>
+                <small>可直接复制给 AI，用于说明 XML / JSON 结构，并自动折叠递归 tree 分支</small>
+              </div>
+              <button id="copyButton" class="secondary" type="button" disabled>复制摘要</button>
+            </div>
+            <div class="output-body">
+              <pre id="textOutput">等待解析…</pre>
+            </div>
+          </article>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <script>
+    const SAMPLE_XML = `<?xml version="1.0" encoding="UTF-8"?>
+<kml>
+  <Document>
+    <Folder>
+      <name>示例分组</name>
+      <Placemark id="p1">
+        <name>点位 A</name>
+        <Point>
+          <coordinates>116.391,39.907,0</coordinates>
+        </Point>
+      </Placemark>
+      <Placemark id="p2">
+        <name>点位 B</name>
+        <Point>
+          <coordinates>121.473,31.230,0</coordinates>
+        </Point>
+      </Placemark>
+    </Folder>
+  </Document>
+</kml>`;
+
+    const SAMPLE_JSON = `{
+  "meta": {
+    "name": "示例项目",
+    "version": 1,
+    "tags": ["demo", "structure"]
+  },
+  "placemarks": [
+    {
+      "id": "p1",
+      "name": "点位 A",
+      "coordinates": [116.391, 39.907, 0],
+      "visible": true
+    },
+    {
+      "id": "p2",
+      "name": "点位 B",
+      "coordinates": [121.473, 31.23, 0],
+      "visible": true
+    }
+  ],
+  "styles": [
+    {
+      "id": "line-blue",
+      "color": "#3366ff"
+    },
+    {
+      "id": "line-green",
+      "color": "#22cc99"
+    }
+  ]
+}`;
+
+    const refs = {
+      dropzone: document.getElementById('dropzone'),
+      fileInput: document.getElementById('fileInput'),
+      xmlInput: document.getElementById('xmlInput'),
+      parseTextButton: document.getElementById('parseTextButton'),
+      sampleXmlButton: document.getElementById('sampleXmlButton'),
+      sampleJsonButton: document.getElementById('sampleJsonButton'),
+      clearButton: document.getElementById('clearButton'),
+      mergeSiblings: document.getElementById('mergeSiblings'),
+      showAttributes: document.getElementById('showAttributes'),
+      showTextMarkers: document.getElementById('showTextMarkers'),
+      openTree: document.getElementById('openTree'),
+      status: document.getElementById('status'),
+      sourceMeta: document.getElementById('sourceMeta'),
+      sizeMeta: document.getElementById('sizeMeta'),
+      treeOutput: document.getElementById('treeOutput'),
+      textOutput: document.getElementById('textOutput'),
+      copyButton: document.getElementById('copyButton'),
+      expandAllButton: document.getElementById('expandAllButton'),
+      statRoot: document.getElementById('statRoot'),
+      statElements: document.getElementById('statElements'),
+      statCompressed: document.getElementById('statCompressed'),
+      statUnique: document.getElementById('statUnique'),
+      statDepth: document.getElementById('statDepth')
+    };
+
+    const state = {
+      sourceLabel: '未载入',
+      sizeLabel: '-',
+      rawInput: '',
+      rawFormat: '',
+      summary: null,
+      stats: null,
+      aiText: '',
+      treeExpanded: true
+    };
+
+    function setStatus(message, type = '') {
+      refs.status.textContent = message;
+      refs.status.className = 'status' + (type ? ` ${type}` : '');
+    }
+
+    function formatNumber(value) {
+      return new Intl.NumberFormat('zh-CN').format(value);
+    }
+
+    function formatBytes(bytes) {
+      if (!Number.isFinite(bytes) || bytes < 0) {
+        return '-';
+      }
+
+      const units = ['B', 'KB', 'MB', 'GB'];
+      let index = 0;
+      let size = bytes;
+      while (size >= 1024 && index < units.length - 1) {
+        size /= 1024;
+        index += 1;
+      }
+      return `${size.toFixed(size >= 100 || index === 0 ? 0 : 1)} ${units[index]}`;
+    }
+
+    function normalizeText(value) {
+      return String(value || '').replace(/\s+/g, ' ').trim();
+    }
+
+    function getFormatLabel(format) {
+      return format === 'json' ? 'JSON' : 'XML';
+    }
+
+    function getOptions() {
+      return {
+        mergeSiblings: refs.mergeSiblings.checked,
+        showAttributes: refs.showAttributes.checked,
+        showTextMarkers: refs.showTextMarkers.checked,
+        openTree: refs.openTree.checked
+      };
+    }
+
+    function createEmptyState() {
+      return '<div class="empty-state">还没有结构结果。<br>请先上传 XML / JSON 文件或粘贴内容。</div>';
+    }
+
+    function resetView() {
+      state.rawInput = '';
+      state.rawFormat = '';
+      state.summary = null;
+      state.stats = null;
+      state.aiText = '';
+      state.treeExpanded = true;
+      refs.treeOutput.innerHTML = createEmptyState();
+      refs.textOutput.textContent = '等待解析…';
+      refs.copyButton.disabled = true;
+      refs.expandAllButton.disabled = true;
+      refs.statRoot.textContent = '-';
+      refs.statElements.textContent = '-';
+      refs.statCompressed.textContent = '-';
+      refs.statUnique.textContent = '-';
+      refs.statDepth.textContent = '-';
+    }
+
+    function updateMeta() {
+      const formatText = state.rawFormat ? ` | 格式：${getFormatLabel(state.rawFormat)}` : '';
+      refs.sourceMeta.textContent = `当前来源：${state.sourceLabel}${formatText}`;
+      refs.sizeMeta.textContent = `大小：${state.sizeLabel}`;
+    }
+
+    function createStats() {
+      return {
+        totalNodes: 0,
+        maxDepth: 1,
+        uniqueSignatures: new Set(),
+        uniqueStructures: 0,
+        displayedNodes: 0
+      };
+    }
+
+    function inferFormatFromFileName(fileName) {
+      const lower = String(fileName || '').toLowerCase();
+      if (/\.(json|geojson|topojson|jsonld)$/.test(lower)) {
+        return 'json';
+      }
+      if (/\.(xml|kml|gpx|svg|xsd|wsdl|plist|xaml|rss|atom)$/.test(lower)) {
+        return 'xml';
+      }
+      return 'auto';
+    }
+
+    function parseXmlOrThrow(xmlText) {
+      const parser = new DOMParser();
+      const documentNode = parser.parseFromString(xmlText, 'application/xml');
+      const parserErrors = documentNode.getElementsByTagName('parsererror');
+      if (parserErrors.length > 0) {
+        const message = normalizeText(parserErrors[0].textContent) || 'XML 解析失败。';
+        throw new Error(message);
+      }
+      if (!documentNode.documentElement) {
+        throw new Error('XML 中没有找到根节点。');
+      }
+      return documentNode;
+    }
+
+    function parseJsonOrThrow(jsonText) {
+      try {
+        return JSON.parse(jsonText);
+      } catch (error) {
+        throw new Error(error?.message || 'JSON 解析失败。');
+      }
+    }
+
+    function parseInputOrThrow(rawText, preferredFormat = 'auto') {
+      const trimmed = rawText.trim();
+      const attempts = [];
+      const pushFormat = (format) => {
+        if (format && !attempts.includes(format)) {
+          attempts.push(format);
+        }
+      };
+
+      if (preferredFormat === 'xml' || preferredFormat === 'json') {
+        pushFormat(preferredFormat);
+      }
+
+      if (trimmed.startsWith('<')) {
+        pushFormat('xml');
+        pushFormat('json');
+      } else if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+        pushFormat('json');
+        pushFormat('xml');
+      } else {
+        pushFormat('json');
+        pushFormat('xml');
+      }
+
+      const errors = [];
+      for (const format of attempts) {
+        try {
+          return format === 'xml'
+            ? { format, parsed: parseXmlOrThrow(trimmed) }
+            : { format, parsed: parseJsonOrThrow(trimmed) };
+        } catch (error) {
+          errors.push(`${getFormatLabel(format)}：${error.message || '解析失败'}`);
+        }
+      }
+
+      throw new Error(`无法识别输入格式，请提供合法 XML 或 JSON。${errors.length ? ` ${errors.join('；')}` : ''}`);
+    }
+
+    function collectTextInfo(element) {
+      let hasText = false;
+      let textCharCount = 0;
+
+      for (const child of element.childNodes) {
+        if (child.nodeType === Node.TEXT_NODE || child.nodeType === Node.CDATA_SECTION_NODE) {
+          const normalized = normalizeText(child.nodeValue);
+          if (normalized) {
+            hasText = true;
+            textCharCount += normalized.length;
+          }
+        }
+      }
+
+      return { hasText, textCharCount };
+    }
+
+    function groupChildSummaries(childSummaries, options) {
+      const childGroups = [];
+      if (options.mergeSiblings) {
+        const groupedBySignature = new Map();
+        for (const childSummary of childSummaries) {
+          const existingGroup = groupedBySignature.get(childSummary.signature);
+          if (existingGroup) {
+            existingGroup.count += 1;
+          } else {
+            const group = { node: childSummary, count: 1 };
+            groupedBySignature.set(childSummary.signature, group);
+            childGroups.push(group);
+          }
+        }
+        return childGroups;
+      }
+
+      childSummaries.forEach((childSummary) => {
+        childGroups.push({ node: childSummary, count: 1 });
+      });
+      return childGroups;
+    }
+
+    function summarizeXmlElement(element, depth, options, stats) {
+      const attrNames = Array.from(element.attributes || [], (attribute) => attribute.name)
+        .sort((left, right) => left.localeCompare(right));
+      const textInfo = collectTextInfo(element);
+
+      stats.totalNodes += 1;
+      stats.maxDepth = Math.max(stats.maxDepth, depth);
+
+      const childElements = Array.from(element.childNodes)
+        .filter((node) => node.nodeType === Node.ELEMENT_NODE)
+        .map((child) => summarizeXmlElement(child, depth + 1, options, stats));
+      const childGroups = groupChildSummaries(childElements, options);
+
+      const signature = JSON.stringify({
+        kind: 'xml-element',
+        name: element.nodeName,
+        attrs: attrNames,
+        hasText: textInfo.hasText,
+        children: childGroups.map((group) => ({ signature: group.node.signature, count: group.count }))
+      });
+
+      stats.uniqueSignatures.add(signature);
+
+      return {
+        name: element.nodeName,
+        kind: 'xml-element',
+        attrNames,
+        hasText: textInfo.hasText,
+        textCharCount: textInfo.textCharCount,
+        childGroups,
+        signature
+      };
+    }
+
+    function summarizeJsonValue(name, value, depth, options, stats) {
+      stats.totalNodes += 1;
+      stats.maxDepth = Math.max(stats.maxDepth, depth);
+
+      if (Array.isArray(value)) {
+        const itemSummaries = value.map((item) => summarizeJsonValue('[]', item, depth + 1, options, stats));
+        const childGroups = groupChildSummaries(itemSummaries, options);
+        const uniqueItemSignatures = Array.from(new Set(itemSummaries.map((item) => item.signature))).sort();
+        const signature = JSON.stringify({
+          kind: 'json-array',
+          name,
+          itemShapes: uniqueItemSignatures
+        });
+
+        stats.uniqueSignatures.add(signature);
+
+        return {
+          name,
+          kind: 'json-array',
+          arrayLength: value.length,
+          childGroups,
+          signature
+        };
+      }
+
+      if (value && typeof value === 'object') {
+        const childSummaries = Object.entries(value)
+          .map(([key, childValue]) => summarizeJsonValue(key, childValue, depth + 1, options, stats));
+        const childGroups = groupChildSummaries(childSummaries, options);
+        const signature = JSON.stringify({
+          kind: 'json-object',
+          name,
+          children: childGroups.map((group) => ({ signature: group.node.signature, count: group.count }))
+        });
+
+        stats.uniqueSignatures.add(signature);
+
+        return {
+          name,
+          kind: 'json-object',
+          childGroups,
+          signature
+        };
+      }
+
+      const valueType = value === null ? 'null' : typeof value;
+      const signature = JSON.stringify({
+        kind: 'json-value',
+        name,
+        valueType
+      });
+
+      stats.uniqueSignatures.add(signature);
+
+      return {
+        name,
+        kind: 'json-value',
+        valueType,
+        stringLength: valueType === 'string' ? String(value).length : 0,
+        childGroups: [],
+        signature
+      };
+    }
+
+    function getSummaryKindToken(summary) {
+      if (summary.kind === 'json-value') {
+        return `value:${summary.valueType}`;
+      }
+
+      if (summary.kind === 'json-object') {
+        const propertyKinds = summary.childGroups.map((group) => {
+          const child = group.node;
+          const childKind = child.kind === 'json-value'
+            ? child.valueType
+            : child.kind.replace('json-', '');
+          return `${child.name}:${childKind}`;
+        });
+        return `object{${propertyKinds.join(',')}}`;
+      }
+
+      if (summary.kind === 'json-array') {
+        const itemKinds = summary.childGroups.map((group) => {
+          const child = group.node;
+          return child.kind === 'json-value'
+            ? child.valueType
+            : child.kind.replace('json-', '');
+        });
+        return `array[${itemKinds.sort().join('|') || 'empty'}]`;
+      }
+
+      return `xml:${summary.name}`;
+    }
+
+    function buildRecursiveKey(summary) {
+      if (summary.kind === 'xml-element') {
+        return JSON.stringify({
+          kind: summary.kind,
+          name: summary.name,
+          attrs: summary.attrNames,
+          hasText: summary.hasText,
+          children: summary.childGroups.map((group) => group.node.name)
+        });
+      }
+
+      if (summary.kind === 'json-object') {
+        return JSON.stringify({
+          kind: summary.kind,
+          properties: summary.childGroups.map((group) => `${group.node.name}:${getSummaryKindToken(group.node)}`)
+        });
+      }
+
+      if (summary.kind === 'json-array') {
+        return JSON.stringify({
+          kind: summary.kind,
+          items: summary.childGroups
+            .map((group) => getSummaryKindToken(group.node))
+            .sort()
+        });
+      }
+
+      return JSON.stringify({
+        kind: summary.kind,
+        name: summary.name,
+        valueType: summary.valueType || ''
+      });
+    }
+
+    function attachRecursiveKeys(summary) {
+      summary.recursiveKey = buildRecursiveKey(summary);
+      for (const group of summary.childGroups) {
+        attachRecursiveKeys(group.node);
+      }
+      return summary;
+    }
+
+    function shouldCollapseRecursive(summary, ancestorKeys = []) {
+      return summary.childGroups.length > 0 && ancestorKeys.includes(summary.recursiveKey);
+    }
+
+    function getRenderableChildGroups(childGroups, ancestorKeys = []) {
+      const renderableGroups = [];
+      const mergedRecursiveGroups = new Map();
+
+      for (const group of childGroups) {
+        if (!shouldCollapseRecursive(group.node, ancestorKeys)) {
+          renderableGroups.push(group);
+          continue;
+        }
+
+        const mergeKey = `${group.node.kind}::${group.node.name}::${group.node.recursiveKey}`;
+        const existingGroup = mergedRecursiveGroups.get(mergeKey);
+        if (existingGroup) {
+          existingGroup.count += group.count;
+        } else {
+          const mergedGroup = { node: group.node, count: group.count };
+          mergedRecursiveGroups.set(mergeKey, mergedGroup);
+          renderableGroups.push(mergedGroup);
+        }
+      }
+
+      return renderableGroups;
+    }
+
+    function countDisplayedNodes(summary, ancestorKeys = []) {
+      let total = 1;
+
+      if (shouldCollapseRecursive(summary, ancestorKeys)) {
+        return total;
+      }
+
+      const nextAncestorKeys = summary.childGroups.length > 0
+        ? [...ancestorKeys, summary.recursiveKey]
+        : ancestorKeys;
+
+      for (const group of getRenderableChildGroups(summary.childGroups, nextAncestorKeys)) {
+        total += countDisplayedNodes(group.node, nextAncestorKeys);
+      }
+
+      return total;
+    }
+
+    function getJsonValueText(summary) {
+      if (summary.valueType === 'string') {
+        return summary.stringLength >= 200
+          ? `字符串（约 ${formatNumber(summary.stringLength)} 字符）`
+          : '字符串';
+      }
+      if (summary.valueType === 'number') {
+        return '数字';
+      }
+      if (summary.valueType === 'boolean') {
+        return '布尔';
+      }
+      return 'null';
+    }
+
+    function getNodeHints(summary, options) {
+      const hints = [];
+
+      if (summary.kind === 'xml-element') {
+        if (options.showAttributes && summary.attrNames.length > 0) {
+          hints.push({
+            text: `属性: ${summary.attrNames.join(', ')}`,
+            lineText: `属性: ${summary.attrNames.join(', ')}`,
+            className: 'attr'
+          });
+        }
+        if (options.showTextMarkers && summary.hasText) {
+          const textLabel = summary.textCharCount >= 200
+            ? `含文本（约 ${formatNumber(summary.textCharCount)} 字符）`
+            : '含文本';
+          hints.push({
+            text: textLabel,
+            lineText: summary.textCharCount >= 200 ? '文本: 长文本' : '含文本',
+            className: 'text'
+          });
+        }
+        return hints;
+      }
+
+      if (!options.showTextMarkers) {
+        return hints;
+      }
+
+      if (summary.kind === 'json-object') {
+        hints.push({ text: '对象', lineText: '对象', className: 'type' });
+      } else if (summary.kind === 'json-array') {
+        const label = `数组(${formatNumber(summary.arrayLength)})`;
+        hints.push({ text: label, lineText: label, className: 'type' });
+      } else if (summary.kind === 'json-value') {
+        const label = getJsonValueText(summary);
+        hints.push({ text: label, lineText: label, className: 'type' });
+      }
+
+      return hints;
+    }
+
+    function getRecursiveHint() {
+      return {
+        text: '递归重复，后续省略',
+        lineText: '递归重复，后续省略',
+        className: 'type'
+      };
+    }
+
+    function makePill(text, className = '') {
+      const span = document.createElement('span');
+      span.className = `pill${className ? ` ${className}` : ''}`;
+      span.textContent = text;
+      return span;
+    }
+
+    function createTreeNode(summary, count = 1, level = 0, options = getOptions(), ancestorKeys = []) {
+      const hasChildren = summary.childGroups.length > 0;
+      const isRecursive = shouldCollapseRecursive(summary, ancestorKeys);
+      const canExpand = hasChildren && !isRecursive;
+      const wrapper = document.createElement(canExpand ? 'details' : 'div');
+      wrapper.className = 'tree-node';
+
+      if (canExpand) {
+        wrapper.open = options.openTree ? level < 2 : false;
+      }
+
+      const line = document.createElement(canExpand ? 'summary' : 'div');
+      line.className = 'tree-line';
+
+      const name = document.createElement('span');
+      name.className = 'node-name';
+      name.textContent = summary.name;
+      line.appendChild(name);
+
+      if (count > 1) {
+        line.appendChild(makePill(`×${formatNumber(count)}`, 'count'));
+      }
+
+      getNodeHints(summary, options).forEach((hint) => {
+        line.appendChild(makePill(hint.text, hint.className));
+      });
+
+      if (isRecursive) {
+        const recursiveHint = getRecursiveHint();
+        line.appendChild(makePill(recursiveHint.text, recursiveHint.className));
+      }
+
+      wrapper.appendChild(line);
+
+      if (canExpand) {
+        const childrenBox = document.createElement('div');
+        childrenBox.className = 'tree-children';
+        const nextAncestorKeys = [...ancestorKeys, summary.recursiveKey];
+        for (const group of getRenderableChildGroups(summary.childGroups, nextAncestorKeys)) {
+          childrenBox.appendChild(createTreeNode(group.node, group.count, level + 1, options, nextAncestorKeys));
+        }
+        wrapper.appendChild(childrenBox);
+      }
+
+      return wrapper;
+    }
+
+    function summaryToLines(summary, count = 1, depth = 0, options = getOptions(), ancestorKeys = []) {
+      const indent = '  '.repeat(depth);
+      const hints = [];
+      const isRecursive = shouldCollapseRecursive(summary, ancestorKeys);
+
+      if (count > 1) {
+        hints.push(`x${count}`);
+      }
+
+      getNodeHints(summary, options).forEach((hint) => {
+        hints.push(hint.lineText || hint.text);
+      });
+
+      if (isRecursive) {
+        const recursiveHint = getRecursiveHint();
+        hints.push(recursiveHint.lineText);
+      }
+
+      const lines = [`${indent}- ${summary.name}${hints.length ? ` [${hints.join(' | ')}]` : ''}`];
+
+      if (isRecursive) {
+        return lines;
+      }
+
+      const nextAncestorKeys = summary.childGroups.length > 0
+        ? [...ancestorKeys, summary.recursiveKey]
+        : ancestorKeys;
+
+      for (const group of getRenderableChildGroups(summary.childGroups, nextAncestorKeys)) {
+        lines.push(...summaryToLines(group.node, group.count, depth + 1, options, nextAncestorKeys));
+      }
+
+      return lines;
+    }
+
+    function getRootDisplayText(summary) {
+      if (summary.kind === 'json-object') {
+        return `${summary.name} (对象)`;
+      }
+      if (summary.kind === 'json-array') {
+        return `${summary.name} (数组)`;
+      }
+      if (summary.kind === 'json-value') {
+        return `${summary.name} (${getJsonValueText(summary)})`;
+      }
+      return summary.name;
+    }
+
+    function buildAiText(summary, stats, options) {
+      const lines = [
+        `格式: ${getFormatLabel(state.rawFormat)}`,
+        `根节点: ${getRootDisplayText(summary)}`,
+        `原始节点数: ${formatNumber(stats.totalNodes)}`,
+        `压缩后节点: ${formatNumber(stats.displayedNodes)}`,
+        `唯一结构数: ${formatNumber(stats.uniqueStructures)}`,
+        `最大深度: ${formatNumber(stats.maxDepth)}`,
+        `来源: ${state.sourceLabel}`,
+        '',
+        '结构摘要：',
+        ...summaryToLines(summary, 1, 0, options),
+        '',
+        '说明：',
+        '- 已移除 XML 属性值、文本正文以及 JSON 的真实值，只保留结构信息。',
+        '- `xN` 表示该层存在 N 个相同结构的重复节点。',
+        '- `递归重复，后续省略` 表示该分支开始重复祖先中已经出现过的同类结构，后续层级已自动折叠。',
+        '- `属性:` 仅展示 XML 属性名，不展示属性值。',
+        '- `对象 / 数组 / 字符串 / 数字 / 布尔 / null` 表示 JSON 值类型，不展示真实值。',
+        '- `含文本` 只表示 XML 节点包含文本内容，不展示真实文本。'
+      ];
+      return lines.join('\n');
+    }
+
+    function renderResult(summary, stats, options) {
+      refs.treeOutput.innerHTML = '';
+      refs.treeOutput.appendChild(createTreeNode(summary, 1, 0, options));
+      refs.textOutput.textContent = state.aiText;
+      refs.copyButton.disabled = false;
+      refs.expandAllButton.disabled = false;
+      refs.expandAllButton.textContent = state.treeExpanded ? '收起全部' : '展开全部';
+      refs.statRoot.textContent = getRootDisplayText(summary);
+      refs.statElements.textContent = formatNumber(stats.totalNodes);
+      refs.statCompressed.textContent = formatNumber(stats.displayedNodes);
+      refs.statUnique.textContent = formatNumber(stats.uniqueStructures);
+      refs.statDepth.textContent = formatNumber(stats.maxDepth);
+    }
+
+    async function analyzeInput(rawText, sourceLabel, sizeLabel, preferredFormat = 'auto') {
+      const trimmed = rawText.trim();
+      if (!trimmed) {
+        resetView();
+        state.sourceLabel = '未载入';
+        state.sizeLabel = '-';
+        updateMeta();
+        setStatus('请输入 XML 或 JSON 内容，或者拖拽一个文件。');
+        return;
+      }
+
+      state.sourceLabel = sourceLabel;
+      state.sizeLabel = sizeLabel;
+      state.rawInput = trimmed;
+      updateMeta();
+      setStatus('正在识别格式并提取结构，请稍候…');
+
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+
+      const options = getOptions();
+      const parsedResult = parseInputOrThrow(trimmed, preferredFormat);
+      const stats = createStats();
+      const summary = attachRecursiveKeys(parsedResult.format === 'xml'
+        ? summarizeXmlElement(parsedResult.parsed.documentElement, 1, options, stats)
+        : summarizeJsonValue('root', parsedResult.parsed, 1, options, stats));
+
+      stats.uniqueStructures = stats.uniqueSignatures.size;
+      stats.displayedNodes = countDisplayedNodes(summary);
+
+      state.rawFormat = parsedResult.format;
+      state.summary = summary;
+      state.stats = stats;
+      state.treeExpanded = !!options.openTree;
+      state.aiText = buildAiText(summary, stats, options);
+
+      updateMeta();
+      renderResult(summary, stats, options);
+      setStatus(
+        `解析完成：已识别为 ${getFormatLabel(parsedResult.format)}，共 ${formatNumber(stats.totalNodes)} 个原始节点，压缩后显示 ${formatNumber(stats.displayedNodes)} 个结构节点。`,
+        'success'
+      );
+    }
+
+    async function handleFile(file) {
+      if (!file) {
+        return;
+      }
+      const fileText = await file.text();
+      refs.xmlInput.value = fileText;
+      await analyzeInput(fileText, `文件：${file.name}`, formatBytes(file.size), inferFormatFromFileName(file.name));
+    }
+
+    async function safeAnalyze(executor) {
+      try {
+        await executor();
+      } catch (error) {
+        console.error(error);
+        resetView();
+        updateMeta();
+        setStatus(`解析失败：${error.message || '未知错误'}`, 'error');
+      }
+    }
+
+    function toggleAllTreeNodes() {
+      const treeNodes = refs.treeOutput.querySelectorAll('details');
+      if (treeNodes.length === 0) {
+        return;
+      }
+      state.treeExpanded = !state.treeExpanded;
+      treeNodes.forEach((node) => {
+        node.open = state.treeExpanded;
+      });
+      refs.expandAllButton.textContent = state.treeExpanded ? '收起全部' : '展开全部';
+    }
+
+    async function copySummary() {
+      if (!state.aiText) {
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(state.aiText);
+        setStatus('AI 结构摘要已复制到剪贴板，可以直接发给 AI 了。', 'success');
+      } catch (error) {
+        console.error(error);
+        const selection = window.getSelection();
+        const range = document.createRange();
+        range.selectNodeContents(refs.textOutput);
+        selection.removeAllRanges();
+        selection.addRange(range);
+        setStatus('复制失败：已帮你选中文本，请手动复制。', 'error');
+      }
+    }
+
+    function reRenderIfReady() {
+      if (!state.rawInput) {
+        return;
+      }
+      safeAnalyze(() => analyzeInput(state.rawInput, state.sourceLabel, state.sizeLabel, state.rawFormat || 'auto'));
+    }
+
+    refs.parseTextButton.addEventListener('click', () => {
+      safeAnalyze(() => analyzeInput(refs.xmlInput.value, '粘贴文本', formatBytes(new Blob([refs.xmlInput.value]).size), 'auto'));
+    });
+
+    refs.sampleXmlButton.addEventListener('click', () => {
+      refs.xmlInput.value = SAMPLE_XML;
+      safeAnalyze(() => analyzeInput(SAMPLE_XML, '示例 XML', formatBytes(new Blob([SAMPLE_XML]).size), 'xml'));
+    });
+
+    refs.sampleJsonButton.addEventListener('click', () => {
+      refs.xmlInput.value = SAMPLE_JSON;
+      safeAnalyze(() => analyzeInput(SAMPLE_JSON, '示例 JSON', formatBytes(new Blob([SAMPLE_JSON]).size), 'json'));
+    });
+
+    refs.clearButton.addEventListener('click', () => {
+      refs.xmlInput.value = '';
+      refs.fileInput.value = '';
+      state.sourceLabel = '未载入';
+      state.sizeLabel = '-';
+      resetView();
+      updateMeta();
+      setStatus('已清空输入和结果。');
+    });
+
+    refs.fileInput.addEventListener('change', () => {
+      const [file] = refs.fileInput.files || [];
+      safeAnalyze(() => handleFile(file));
+    });
+
+    refs.copyButton.addEventListener('click', () => {
+      copySummary();
+    });
+
+    refs.expandAllButton.addEventListener('click', () => {
+      toggleAllTreeNodes();
+    });
+
+    [refs.mergeSiblings, refs.showAttributes, refs.showTextMarkers, refs.openTree].forEach((element) => {
+      element.addEventListener('change', () => {
+        reRenderIfReady();
+      });
+    });
+
+    refs.dropzone.addEventListener('click', () => refs.fileInput.click());
+    refs.dropzone.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        refs.fileInput.click();
+      }
+    });
+
+    ['dragenter', 'dragover'].forEach((eventName) => {
+      refs.dropzone.addEventListener(eventName, (event) => {
+        event.preventDefault();
+        refs.dropzone.classList.add('active');
+      });
+    });
+
+    ['dragleave', 'dragend', 'drop'].forEach((eventName) => {
+      refs.dropzone.addEventListener(eventName, (event) => {
+        event.preventDefault();
+        refs.dropzone.classList.remove('active');
+      });
+    });
+
+    refs.dropzone.addEventListener('drop', (event) => {
+      const [file] = event.dataTransfer?.files || [];
+      if (file) {
+        safeAnalyze(() => handleFile(file));
+      }
+    });
+
+    updateMeta();
+    resetView();
+  </script>
+</body>
+</html>
