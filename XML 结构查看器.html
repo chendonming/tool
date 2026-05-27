@@ -432,6 +432,39 @@
       border-color: rgba(255, 184, 108, 0.22);
     }
 
+    .pill.interface {
+      color: #e4f6ff;
+      background: rgba(109, 226, 195, 0.12);
+      border-color: rgba(109, 226, 195, 0.24);
+    }
+
+    .tree-sections {
+      display: grid;
+      gap: 18px;
+    }
+
+    .tree-section {
+      display: grid;
+      gap: 10px;
+    }
+
+    .tree-section + .tree-section {
+      padding-top: 18px;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .tree-section-header h4 {
+      margin: 0;
+      font-size: 14px;
+    }
+
+    .tree-section-header p {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.6;
+    }
+
     pre {
       margin: 0;
       padding: 16px;
@@ -575,6 +608,13 @@
                 结构太深时能更清爽；不勾选则全部折叠，从根开始慢慢看。
               </span>
             </label>
+            <label class="toggle">
+              <input id="useJsonInterfaces" type="checkbox">
+              <span>
+                <strong>JSON 启用 interface 结构</strong>
+                仅对 JSON 生效。把对象结构抽成类似 TypeScript interface 的定义，入口结构只保留接口 / 类型引用，适合深层 tree、children 递归数据。
+              </span>
+            </label>
           </div>
 
           <div id="status" class="status">等待输入 XML 或 JSON。解析成功后，右侧会出现结构树和可复制的 AI 摘要。</div>
@@ -702,6 +742,7 @@
       showAttributes: document.getElementById('showAttributes'),
       showTextMarkers: document.getElementById('showTextMarkers'),
       openTree: document.getElementById('openTree'),
+      useJsonInterfaces: document.getElementById('useJsonInterfaces'),
       status: document.getElementById('status'),
       sourceMeta: document.getElementById('sourceMeta'),
       sizeMeta: document.getElementById('sizeMeta'),
@@ -722,6 +763,7 @@
       rawInput: '',
       rawFormat: '',
       summary: null,
+      interfaceRegistry: null,
       stats: null,
       aiText: '',
       treeExpanded: true
@@ -764,7 +806,8 @@
         mergeSiblings: refs.mergeSiblings.checked,
         showAttributes: refs.showAttributes.checked,
         showTextMarkers: refs.showTextMarkers.checked,
-        openTree: refs.openTree.checked
+        openTree: refs.openTree.checked,
+        useJsonInterfaces: refs.useJsonInterfaces.checked
       };
     }
 
@@ -776,6 +819,7 @@
       state.rawInput = '';
       state.rawFormat = '';
       state.summary = null;
+      state.interfaceRegistry = null;
       state.stats = null;
       state.aiText = '';
       state.treeExpanded = true;
@@ -1013,6 +1057,766 @@
         childGroups: [],
         signature
       };
+    }
+
+    function isJsonInterfaceMode(options, format = state.rawFormat) {
+      return format === 'json' && !!options.useJsonInterfaces;
+    }
+
+    function toPascalCase(value) {
+      const prepared = String(value || '')
+        .replace(/\[\]/g, ' item ')
+        .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+        .replace(/[_\-\s]+/g, ' ')
+        .trim();
+
+      if (!prepared) {
+        return '';
+      }
+
+      const parts = prepared.match(/[A-Za-z0-9]+|[\u4e00-\u9fa5]+/g) || [];
+      const normalized = parts
+        .map((part) => {
+          if (/^[A-Za-z0-9]+$/.test(part)) {
+            return part.charAt(0).toUpperCase() + part.slice(1).toLowerCase();
+          }
+          return part;
+        })
+        .join('');
+
+      return normalized && /^[A-Za-z_\u4e00-\u9fa5]/.test(normalized) ? normalized : '';
+    }
+
+    function singularizeName(name) {
+      const irregularMap = {
+        Children: 'Child',
+        People: 'Person',
+        Men: 'Man',
+        Women: 'Woman'
+      };
+
+      if (irregularMap[name]) {
+        return irregularMap[name];
+      }
+
+      if (name.endsWith('ies') && name.length > 3) {
+        return `${name.slice(0, -3)}y`;
+      }
+
+      if (/(ches|shes|sses|xes|zes)$/i.test(name)) {
+        return name.slice(0, -2);
+      }
+
+      if (name.endsWith('s') && !name.endsWith('ss') && name.length > 1) {
+        return name.slice(0, -1);
+      }
+
+      return name;
+    }
+
+    function createJsonTypeCycleKey(summary) {
+      if (summary.kind === 'json-value') {
+        return `value:${summary.valueType}`;
+      }
+
+      if (summary.kind === 'json-array') {
+        const itemKinds = Array.from(new Set(summary.childGroups.map((group) => (
+          group.node.kind === 'json-value'
+            ? group.node.valueType
+            : group.node.kind
+        )))).sort();
+        return `array:${itemKinds.join('|') || 'empty'}`;
+      }
+
+      return `object:${summary.childGroups
+        .map((group) => {
+          const child = group.node;
+          const childKind = child.kind === 'json-value' ? child.valueType : child.kind;
+          return `${child.name}:${childKind}`;
+        })
+        .sort()
+        .join('|')}`;
+    }
+
+    function buildJsonTypeSignature(summary, trail = []) {
+      if (summary.kind === 'json-value') {
+        return `value:${summary.valueType}`;
+      }
+
+      const cycleKey = createJsonTypeCycleKey(summary);
+      if (trail.includes(cycleKey)) {
+        return `recursive:${cycleKey}`;
+      }
+
+      const nextTrail = [...trail, cycleKey];
+
+      if (summary.kind === 'json-array') {
+        const itemTypes = Array.from(new Set(summary.childGroups.map((group) => (
+          buildJsonTypeSignature(group.node, nextTrail)
+        )))).sort((left, right) => left.localeCompare(right));
+        return `array<${itemTypes.join('|') || 'empty'}>`;
+      }
+
+      const properties = summary.childGroups
+        .slice()
+        .sort((left, right) => left.node.name.localeCompare(right.node.name))
+        .map((group) => `${group.node.name}:${buildJsonTypeSignature(group.node, nextTrail)}`);
+
+      return `object{${properties.join(';')}}`;
+    }
+
+    function attachJsonTypeSignatures(summary) {
+      if (!summary || !summary.kind || !summary.kind.startsWith('json-')) {
+        return summary;
+      }
+
+      summary.typeSignature = buildJsonTypeSignature(summary);
+      for (const group of summary.childGroups) {
+        attachJsonTypeSignatures(group.node);
+      }
+      return summary;
+    }
+
+    function buildJsonInterfaceNameHint(context = {}) {
+      if (!context.sourceName || context.sourceName === 'root') {
+        return 'Root';
+      }
+
+      const baseName = toPascalCase(context.sourceName);
+      if (!baseName) {
+        return context.isArrayItem ? 'ItemShape' : 'ObjectShape';
+      }
+
+      if (context.isArrayItem) {
+        const singularName = singularizeName(baseName);
+        return singularName === baseName ? `${baseName}Item` : singularName;
+      }
+
+      return baseName;
+    }
+
+    function collectJsonInterfaces(summary, registry, context = { sourceName: summary?.name || 'root', isArrayItem: false }) {
+      if (!summary || !summary.kind || !summary.kind.startsWith('json-')) {
+        return;
+      }
+
+      if (summary.kind === 'json-object') {
+        const signature = summary.typeSignature || buildJsonTypeSignature(summary);
+        let entry = registry.bySignature.get(signature);
+
+        if (!entry) {
+          entry = {
+            signature,
+            summary,
+            interfaceName: '',
+            nameHints: [],
+            occurrences: 0
+          };
+          registry.bySignature.set(signature, entry);
+        }
+
+        entry.occurrences += 1;
+        const hint = buildJsonInterfaceNameHint(context);
+        if (hint && !entry.nameHints.includes(hint)) {
+          entry.nameHints.push(hint);
+        }
+
+        for (const group of summary.childGroups) {
+          collectJsonInterfaces(group.node, registry, {
+            sourceName: group.node.name,
+            isArrayItem: false
+          });
+        }
+        return;
+      }
+
+      if (summary.kind === 'json-array') {
+        for (const group of summary.childGroups) {
+          collectJsonInterfaces(group.node, registry, {
+            sourceName: summary.name,
+            isArrayItem: true
+          });
+        }
+      }
+    }
+
+    function getUniqueInterfaceName(baseName, usedNames) {
+      const safeBaseName = baseName || 'Shape';
+      let candidate = safeBaseName;
+      let suffix = 2;
+
+      while (usedNames.has(candidate)) {
+        candidate = `${safeBaseName}${suffix}`;
+        suffix += 1;
+      }
+
+      usedNames.add(candidate);
+      return candidate;
+    }
+
+    function mergeInterfaceNameHints(targetHints, sourceHints) {
+      sourceHints.forEach((hint) => {
+        if (hint && !targetHints.includes(hint)) {
+          targetHints.push(hint);
+        }
+      });
+      return targetHints;
+    }
+
+    function compareJsonInterfaceEntries(left, right) {
+      const leftHasRoot = left.nameHints.includes('Root');
+      const rightHasRoot = right.nameHints.includes('Root');
+      if (leftHasRoot !== rightHasRoot) {
+        return leftHasRoot ? -1 : 1;
+      }
+      if (right.occurrences !== left.occurrences) {
+        return right.occurrences - left.occurrences;
+      }
+      return (left.nameHints[0] || '').localeCompare(right.nameHints[0] || '', 'zh-CN');
+    }
+
+    function sortJsonDisplayTypes(values) {
+      return values.slice().sort((left, right) => {
+        const getWeight = (value) => {
+          if (value === 'null') {
+            return 99;
+          }
+          if (value === 'string' || value === 'number' || value === 'boolean') {
+            return 20;
+          }
+          if (value.endsWith('[]') || value.startsWith('Array<')) {
+            return 40;
+          }
+          return 30;
+        };
+
+        const weightDiff = getWeight(left) - getWeight(right);
+        if (weightDiff !== 0) {
+          return weightDiff;
+        }
+        return left.localeCompare(right, 'zh-CN');
+      });
+    }
+
+    function resolveJsonInterfaceAlias(aliasMap, signature) {
+      let current = signature;
+
+      while (aliasMap.has(current) && aliasMap.get(current) !== current) {
+        current = aliasMap.get(current);
+      }
+
+      return current;
+    }
+
+    function getCanonicalJsonTypeToken(summary, aliasMap) {
+      if (summary.kind === 'json-value') {
+        return getJsonPrimitiveType(summary);
+      }
+
+      if (summary.kind === 'json-object') {
+        const signature = summary.typeSignature || buildJsonTypeSignature(summary);
+        return `object:${resolveJsonInterfaceAlias(aliasMap, signature)}`;
+      }
+
+      if (summary.kind === 'json-array') {
+        const itemTypes = Array.from(new Set(summary.childGroups.map((group) => (
+          getCanonicalJsonTypeToken(group.node, aliasMap)
+        )))).sort((left, right) => left.localeCompare(right, 'zh-CN'));
+
+        return `array<${itemTypes.join('|') || 'empty'}>`;
+      }
+
+      return 'unknown';
+    }
+
+    function buildJsonInterfaceEquivalenceKey(entry, aliasMap) {
+      const propertyTokens = entry.summary.childGroups
+        .slice()
+        .sort((left, right) => left.node.name.localeCompare(right.node.name, 'zh-CN'))
+        .map((group) => `${group.node.name}:${getCanonicalJsonTypeToken(group.node, aliasMap)}`);
+
+      return `object{${propertyTokens.join(';')}}`;
+    }
+
+    function mergeEquivalentJsonInterfaces(registry) {
+      const originalEntries = Array.from(registry.bySignature.values());
+      const aliasMap = new Map(originalEntries.map((entry) => [entry.signature, entry.signature]));
+      let changed = true;
+
+      while (changed) {
+        changed = false;
+        const groupsByKey = new Map();
+
+        originalEntries.forEach((entry) => {
+          const resolvedSignature = resolveJsonInterfaceAlias(aliasMap, entry.signature);
+          if (resolvedSignature !== entry.signature) {
+            return;
+          }
+
+          const equivalenceKey = buildJsonInterfaceEquivalenceKey(entry, aliasMap);
+          if (!groupsByKey.has(equivalenceKey)) {
+            groupsByKey.set(equivalenceKey, []);
+          }
+          groupsByKey.get(equivalenceKey).push(entry);
+        });
+
+        for (const group of groupsByKey.values()) {
+          if (group.length < 2) {
+            continue;
+          }
+
+          group.sort(compareJsonInterfaceEntries);
+          const primary = group[0];
+          const primarySignature = resolveJsonInterfaceAlias(aliasMap, primary.signature);
+
+          for (const duplicate of group.slice(1)) {
+            const duplicateSignature = resolveJsonInterfaceAlias(aliasMap, duplicate.signature);
+            if (duplicateSignature === primarySignature) {
+              continue;
+            }
+
+            aliasMap.set(duplicateSignature, primarySignature);
+            changed = true;
+          }
+
+          if (changed) {
+            break;
+          }
+        }
+      }
+
+      const mergedEntriesBySignature = new Map();
+      originalEntries.forEach((entry) => {
+        const resolvedSignature = resolveJsonInterfaceAlias(aliasMap, entry.signature);
+        const existingEntry = mergedEntriesBySignature.get(resolvedSignature);
+
+        if (existingEntry) {
+          existingEntry.occurrences += entry.occurrences;
+          mergeInterfaceNameHints(existingEntry.nameHints, entry.nameHints);
+          return;
+        }
+
+        mergedEntriesBySignature.set(resolvedSignature, {
+          signature: resolvedSignature,
+          summary: entry.summary,
+          interfaceName: '',
+          nameHints: [...entry.nameHints],
+          occurrences: entry.occurrences
+        });
+      });
+
+      registry.resolvedSignatureBySignature = new Map();
+      originalEntries.forEach((entry) => {
+        registry.resolvedSignatureBySignature.set(entry.signature, resolveJsonInterfaceAlias(aliasMap, entry.signature));
+      });
+
+      registry.entries = Array.from(mergedEntriesBySignature.values()).sort(compareJsonInterfaceEntries);
+    }
+
+    function buildJsonInterfacePropertyKeySignature(summary) {
+      return JSON.stringify({
+        kind: 'json-interface',
+        properties: summary.childGroups
+          .map((group) => group.node.name)
+          .sort((left, right) => left.localeCompare(right, 'zh-CN'))
+      });
+    }
+
+    function buildRegistryJsonTypeToken(summary, registry, displaySignatureBySignature = registry.displaySignatureBySignature || new Map()) {
+      if (summary.kind === 'json-value') {
+        return JSON.stringify({
+          kind: 'primitive',
+          valueType: getJsonPrimitiveType(summary)
+        });
+      }
+
+      if (summary.kind === 'json-object') {
+        const rawSignature = summary.typeSignature || buildJsonTypeSignature(summary);
+        const resolvedSignature = registry.resolvedSignatureBySignature?.get(rawSignature) || rawSignature;
+        const displaySignature = displaySignatureBySignature.get(resolvedSignature) || resolvedSignature;
+
+        return JSON.stringify({
+          kind: 'object',
+          signature: displaySignature
+        });
+      }
+
+      if (summary.kind === 'json-array') {
+        const itemTokens = Array.from(new Set(summary.childGroups.map((group) => (
+          buildRegistryJsonTypeToken(group.node, registry, displaySignatureBySignature)
+        )))).sort((left, right) => left.localeCompare(right, 'zh-CN'));
+
+        return JSON.stringify({
+          kind: 'array',
+          items: itemTokens.map((token) => JSON.parse(token))
+        });
+      }
+
+      return JSON.stringify({
+        kind: 'primitive',
+        valueType: 'unknown'
+      });
+    }
+
+    function formatJsonTypeToken(token, registry) {
+      const descriptor = typeof token === 'string' ? JSON.parse(token) : token;
+
+      if (descriptor.kind === 'primitive') {
+        return descriptor.valueType || 'unknown';
+      }
+
+      if (descriptor.kind === 'object') {
+        return registry.nameBySignature.get(descriptor.signature) || 'ObjectShape';
+      }
+
+      if (descriptor.kind === 'array') {
+        const itemTypes = sortJsonDisplayTypes(Array.from(new Set((descriptor.items || [])
+          .map((item) => formatJsonTypeToken(item, registry)))));
+
+        if (itemTypes.length === 0) {
+          return 'unknown[]';
+        }
+
+        if (itemTypes.length === 1) {
+          const [itemType] = itemTypes;
+          if (itemType.endsWith('[]') || itemType.startsWith('Array<') || itemType.includes(' | ')) {
+            return `Array<${itemType}>`;
+          }
+          return `${itemType}[]`;
+        }
+
+        return `Array<${itemTypes.join(' | ')}>`;
+      }
+
+      return 'unknown';
+    }
+
+    function formatJsonTypeTokens(typeTokens, registry) {
+      const displayTypes = sortJsonDisplayTypes(Array.from(new Set((typeTokens || [])
+        .map((token) => formatJsonTypeToken(token, registry)))));
+
+      if (displayTypes.length === 0) {
+        return 'unknown';
+      }
+
+      if (displayTypes.length === 1) {
+        return displayTypes[0];
+      }
+
+      return displayTypes.join(' | ');
+    }
+
+    function buildDisplayGroupedJsonInterfaces(registry) {
+      const sourceEntries = (registry.entries || Array.from(registry.bySignature.values())).slice();
+      const displayEntriesBySignature = new Map();
+      const displaySignatureBySignature = new Map();
+
+      sourceEntries.forEach((entry) => {
+        const displaySignature = buildJsonInterfacePropertyKeySignature(entry.summary);
+        displaySignatureBySignature.set(entry.signature, displaySignature);
+
+        let displayEntry = displayEntriesBySignature.get(displaySignature);
+        if (!displayEntry) {
+          displayEntry = {
+            signature: displaySignature,
+            summary: entry.summary,
+            interfaceName: '',
+            nameHints: [...entry.nameHints],
+            occurrences: entry.occurrences,
+            properties: [],
+            sourceEntries: [entry]
+          };
+          displayEntriesBySignature.set(displaySignature, displayEntry);
+          return;
+        }
+
+        displayEntry.sourceEntries.push(entry);
+        displayEntry.occurrences += entry.occurrences;
+        mergeInterfaceNameHints(displayEntry.nameHints, entry.nameHints);
+        if (compareJsonInterfaceEntries(entry, displayEntry) < 0) {
+          displayEntry.summary = entry.summary;
+        }
+      });
+
+      displayEntriesBySignature.forEach((entry) => {
+        const propertyMap = new Map();
+
+        entry.sourceEntries.forEach((sourceEntry) => {
+          sourceEntry.summary.childGroups.forEach((group) => {
+            let property = propertyMap.get(group.node.name);
+            if (!property) {
+              property = {
+                name: group.node.name,
+                typeTokens: new Set()
+              };
+              propertyMap.set(group.node.name, property);
+            }
+
+            property.typeTokens.add(buildRegistryJsonTypeToken(group.node, registry, displaySignatureBySignature));
+          });
+        });
+
+        entry.properties = Array.from(propertyMap.values())
+          .sort((left, right) => left.name.localeCompare(right.name, 'zh-CN'))
+          .map((property) => ({
+            name: property.name,
+            typeTokens: Array.from(property.typeTokens).sort((left, right) => left.localeCompare(right, 'zh-CN'))
+          }));
+      });
+
+      registry.displaySignatureBySignature = displaySignatureBySignature;
+      registry.entries = Array.from(displayEntriesBySignature.values()).sort(compareJsonInterfaceEntries);
+    }
+
+    function assignJsonInterfaceNames(registry) {
+      const usedNames = new Set();
+      registry.entries = (registry.entries || []).slice().sort(compareJsonInterfaceEntries);
+
+      registry.nameBySignature = new Map();
+
+      registry.entries.forEach((entry, index) => {
+        const preferredName = entry.nameHints.find((name) => !usedNames.has(name))
+          || entry.nameHints[0]
+          || `Shape${index + 1}`;
+        entry.interfaceName = getUniqueInterfaceName(preferredName, usedNames);
+        registry.nameBySignature.set(entry.signature, entry.interfaceName);
+      });
+
+      for (const [signature, displaySignature] of (registry.displaySignatureBySignature || new Map()).entries()) {
+        registry.nameBySignature.set(signature, registry.nameBySignature.get(displaySignature));
+      }
+
+      for (const [signature, resolvedSignature] of (registry.resolvedSignatureBySignature || new Map()).entries()) {
+        const displaySignature = registry.displaySignatureBySignature?.get(resolvedSignature) || resolvedSignature;
+        registry.nameBySignature.set(signature, registry.nameBySignature.get(displaySignature));
+      }
+    }
+
+    function createJsonInterfaceRegistry(summary) {
+      if (!summary || !summary.kind || !summary.kind.startsWith('json-')) {
+        return null;
+      }
+
+      attachJsonTypeSignatures(summary);
+
+      const registry = {
+        bySignature: new Map(),
+        entries: [],
+        nameBySignature: new Map()
+      };
+
+      collectJsonInterfaces(summary, registry, {
+        sourceName: summary.name,
+        isArrayItem: false
+      });
+      mergeEquivalentJsonInterfaces(registry);
+      buildDisplayGroupedJsonInterfaces(registry);
+      assignJsonInterfaceNames(registry);
+      return registry;
+    }
+
+    function getJsonPrimitiveType(summary) {
+      if (summary.valueType === 'string') {
+        return 'string';
+      }
+      if (summary.valueType === 'number') {
+        return 'number';
+      }
+      if (summary.valueType === 'boolean') {
+        return 'boolean';
+      }
+      return 'null';
+    }
+
+    function getJsonTypeReference(summary, interfaceRegistry) {
+      return formatJsonTypeTokens([
+        buildRegistryJsonTypeToken(summary, interfaceRegistry)
+      ], interfaceRegistry);
+    }
+
+    function formatInterfacePropertyName(name) {
+      return /^[A-Za-z_$\u4e00-\u9fa5][A-Za-z0-9_$\u4e00-\u9fa5]*$/.test(name)
+        ? name
+        : JSON.stringify(name);
+    }
+
+    function countInterfaceDisplayedNodes(summary, interfaceRegistry) {
+      let total = 1;
+
+      for (const entry of interfaceRegistry?.entries || []) {
+        total += 1 + entry.properties.length;
+      }
+
+      return total;
+    }
+
+    function getJsonEntryLineHints(summary, interfaceRegistry) {
+      const hints = [];
+
+      if (summary.kind === 'json-object') {
+        hints.push(`接口: ${getJsonTypeReference(summary, interfaceRegistry)}`);
+        return hints;
+      }
+
+      if (summary.kind === 'json-array') {
+        hints.push(`类型: ${getJsonTypeReference(summary, interfaceRegistry)}`);
+        hints.push(`长度: ${formatNumber(summary.arrayLength)}`);
+        return hints;
+      }
+
+      hints.push(`类型: ${getJsonTypeReference(summary, interfaceRegistry)}`);
+      return hints;
+    }
+
+    function buildJsonEntryLines(summary, interfaceRegistry) {
+      const hints = getJsonEntryLineHints(summary, interfaceRegistry);
+      return [`- ${summary.name}${hints.length ? ` [${hints.join(' | ')}]` : ''}`];
+    }
+
+    function buildJsonInterfaceDefinitionLines(interfaceRegistry) {
+      const lines = [];
+
+      for (const [index, entry] of (interfaceRegistry?.entries || []).entries()) {
+        lines.push(`interface ${entry.interfaceName} {`);
+        if (entry.properties.length === 0) {
+          lines.push('  // empty');
+        } else {
+          entry.properties.forEach((property) => {
+            lines.push(`  ${formatInterfacePropertyName(property.name)}: ${formatJsonTypeTokens(property.typeTokens, interfaceRegistry)};`);
+          });
+        }
+        lines.push('}');
+        if (index < interfaceRegistry.entries.length - 1) {
+          lines.push('');
+        }
+      }
+
+      return lines;
+    }
+
+    function createTreeSection(title, description) {
+      const section = document.createElement('section');
+      section.className = 'tree-section';
+
+      const header = document.createElement('div');
+      header.className = 'tree-section-header';
+
+      const heading = document.createElement('h4');
+      heading.textContent = title;
+      header.appendChild(heading);
+
+      if (description) {
+        const text = document.createElement('p');
+        text.textContent = description;
+        header.appendChild(text);
+      }
+
+      section.appendChild(header);
+      return section;
+    }
+
+    function appendTreePill(line, text, className) {
+      if (!text) {
+        return;
+      }
+      line.appendChild(makePill(text, className));
+    }
+
+    function createJsonEntryTreeNode(summary, interfaceRegistry) {
+      const wrapper = document.createElement('div');
+      wrapper.className = 'tree-node';
+
+      const line = document.createElement('div');
+      line.className = 'tree-line';
+
+      const name = document.createElement('span');
+      name.className = 'node-name';
+      name.textContent = summary.name;
+      line.appendChild(name);
+
+      if (summary.kind === 'json-object') {
+        appendTreePill(line, `接口: ${getJsonTypeReference(summary, interfaceRegistry)}`, 'interface');
+      } else if (summary.kind === 'json-array') {
+        appendTreePill(line, `类型: ${getJsonTypeReference(summary, interfaceRegistry)}`, 'interface');
+        appendTreePill(line, `数组(${formatNumber(summary.arrayLength)})`, 'type');
+      } else {
+        appendTreePill(line, `类型: ${getJsonTypeReference(summary, interfaceRegistry)}`, 'type');
+      }
+
+      wrapper.appendChild(line);
+      return wrapper;
+    }
+
+    function createJsonInterfacePropertyNode(property, interfaceRegistry) {
+      const wrapper = document.createElement('div');
+      wrapper.className = 'tree-node';
+
+      const line = document.createElement('div');
+      line.className = 'tree-line';
+
+      const name = document.createElement('span');
+      name.className = 'node-name';
+      name.textContent = property.name;
+      line.appendChild(name);
+
+      const typeText = formatJsonTypeTokens(property.typeTokens, interfaceRegistry);
+      appendTreePill(line, typeText, typeText === 'string' || typeText === 'number' || typeText === 'boolean' || typeText === 'null' ? 'type' : 'interface');
+
+      wrapper.appendChild(line);
+      return wrapper;
+    }
+
+    function createJsonInterfaceEntryNode(entry, options, interfaceRegistry) {
+      const wrapper = document.createElement('details');
+      wrapper.className = 'tree-node';
+      wrapper.open = !!options.openTree;
+
+      const line = document.createElement('summary');
+      line.className = 'tree-line';
+
+      const name = document.createElement('span');
+      name.className = 'node-name';
+      name.textContent = `interface ${entry.interfaceName}`;
+      line.appendChild(name);
+
+      appendTreePill(line, `${formatNumber(entry.properties.length)} 个属性`, 'interface');
+      if (entry.occurrences > 1) {
+        appendTreePill(line, `引用 ${formatNumber(entry.occurrences)} 次`, 'count');
+      }
+
+      wrapper.appendChild(line);
+
+      const childrenBox = document.createElement('div');
+      childrenBox.className = 'tree-children';
+      entry.properties.forEach((property) => {
+        childrenBox.appendChild(createJsonInterfacePropertyNode(property, interfaceRegistry));
+      });
+      wrapper.appendChild(childrenBox);
+
+      return wrapper;
+    }
+
+    function createJsonInterfaceView(summary, options, interfaceRegistry) {
+      const container = document.createElement('div');
+      container.className = 'tree-sections';
+
+      const entrySection = createTreeSection('入口结构', '只展示 JSON 根入口与 interface / 类型引用，避免在主树里反复展开深层对象。');
+      entrySection.appendChild(createJsonEntryTreeNode(summary, interfaceRegistry));
+      container.appendChild(entrySection);
+
+      if (interfaceRegistry?.entries.length > 0) {
+        const definitionsSection = createTreeSection(
+          `Interface 定义（${formatNumber(interfaceRegistry.entries.length)}）`,
+          '对象结构会抽成类似 TypeScript interface 的定义；递归 tree 会自动显示为自引用类型。'
+        );
+
+        interfaceRegistry.entries.forEach((entry) => {
+          definitionsSection.appendChild(createJsonInterfaceEntryNode(entry, options, interfaceRegistry));
+        });
+        container.appendChild(definitionsSection);
+      }
+
+      return container;
     }
 
     function getSummaryKindToken(summary) {
@@ -1285,23 +2089,63 @@
       return lines;
     }
 
-    function getRootDisplayText(summary) {
+    function getRootDisplayText(summary, options = getOptions(), interfaceRegistry = state.interfaceRegistry) {
+      const interfaceMode = isJsonInterfaceMode(options) && interfaceRegistry;
+
       if (summary.kind === 'json-object') {
-        return `${summary.name} (对象)`;
+        return interfaceMode
+          ? `${summary.name} (对象 / ${getJsonTypeReference(summary, interfaceRegistry)})`
+          : `${summary.name} (对象)`;
       }
       if (summary.kind === 'json-array') {
-        return `${summary.name} (数组)`;
+        return interfaceMode
+          ? `${summary.name} (数组 / ${getJsonTypeReference(summary, interfaceRegistry)})`
+          : `${summary.name} (数组)`;
       }
       if (summary.kind === 'json-value') {
-        return `${summary.name} (${getJsonValueText(summary)})`;
+        return interfaceMode
+          ? `${summary.name} (${getJsonTypeReference(summary, interfaceRegistry)})`
+          : `${summary.name} (${getJsonValueText(summary)})`;
       }
       return summary.name;
     }
 
-    function buildAiText(summary, stats, options) {
+    function buildAiText(summary, stats, options, interfaceRegistry = null) {
+      if (isJsonInterfaceMode(options) && interfaceRegistry) {
+        const interfaceLines = buildJsonInterfaceDefinitionLines(interfaceRegistry);
+        const lines = [
+          `格式: ${getFormatLabel(state.rawFormat)}`,
+          `根节点: ${getRootDisplayText(summary, options, interfaceRegistry)}`,
+          `原始节点数: ${formatNumber(stats.totalNodes)}`,
+          `压缩后节点: ${formatNumber(stats.displayedNodes)}`,
+          `唯一结构数: ${formatNumber(stats.uniqueStructures)}`,
+          `最大深度: ${formatNumber(stats.maxDepth)}`,
+          `来源: ${state.sourceLabel}`,
+          '',
+          '入口结构：',
+          ...buildJsonEntryLines(summary, interfaceRegistry)
+        ];
+
+        if (interfaceLines.length > 0) {
+          lines.push('', 'Interface 定义：', ...interfaceLines);
+        }
+
+        lines.push(
+          '',
+          '说明：',
+          '- 已启用 JSON interface 结构展示：对象会先抽成类似 TypeScript interface 的定义，入口结构只保留接口 / 类型引用。',
+          '- 字段集合相同的对象会自动合并成同一个 interface；字段类型差异会提升为联合类型，例如 `string | null`。',
+          '- 已移除 XML 属性值、文本正文以及 JSON 的真实值，只保留结构与类型信息。',
+          '- 递归 tree / children 结构会自动压缩为自引用类型，例如 `Root[]` 或 `Array<Node | Leaf>`。',
+          '- `InterfaceName[]` / `Array<A | B>` 表示数组元素类型，不展示真实值。',
+        );
+
+        return lines.join('\n');
+      }
+
       const lines = [
         `格式: ${getFormatLabel(state.rawFormat)}`,
-        `根节点: ${getRootDisplayText(summary)}`,
+        `根节点: ${getRootDisplayText(summary, options, interfaceRegistry)}`,
         `原始节点数: ${formatNumber(stats.totalNodes)}`,
         `压缩后节点: ${formatNumber(stats.displayedNodes)}`,
         `唯一结构数: ${formatNumber(stats.uniqueStructures)}`,
@@ -1322,14 +2166,23 @@
       return lines.join('\n');
     }
 
-    function renderResult(summary, stats, options) {
+    function renderResult(summary, stats, options, interfaceRegistry = null) {
       refs.treeOutput.innerHTML = '';
-      refs.treeOutput.appendChild(createTreeNode(summary, 1, 0, options));
+
+      if (isJsonInterfaceMode(options) && interfaceRegistry) {
+        refs.treeOutput.appendChild(createJsonInterfaceView(summary, options, interfaceRegistry));
+      } else {
+        refs.treeOutput.appendChild(createTreeNode(summary, 1, 0, options));
+      }
+
       refs.textOutput.textContent = state.aiText;
       refs.copyButton.disabled = false;
-      refs.expandAllButton.disabled = false;
-      refs.expandAllButton.textContent = state.treeExpanded ? '收起全部' : '展开全部';
-      refs.statRoot.textContent = getRootDisplayText(summary);
+      const hasExpandableNodes = !!refs.treeOutput.querySelector('details');
+      refs.expandAllButton.disabled = !hasExpandableNodes;
+      refs.expandAllButton.textContent = hasExpandableNodes
+        ? (state.treeExpanded ? '收起全部' : '展开全部')
+        : '展开/收起全部';
+      refs.statRoot.textContent = getRootDisplayText(summary, options, interfaceRegistry);
       refs.statElements.textContent = formatNumber(stats.totalNodes);
       refs.statCompressed.textContent = formatNumber(stats.displayedNodes);
       refs.statUnique.textContent = formatNumber(stats.uniqueStructures);
@@ -1361,20 +2214,28 @@
       const summary = attachRecursiveKeys(parsedResult.format === 'xml'
         ? summarizeXmlElement(parsedResult.parsed.documentElement, 1, options, stats)
         : summarizeJsonValue('root', parsedResult.parsed, 1, options, stats));
+      const interfaceRegistry = isJsonInterfaceMode(options, parsedResult.format)
+        ? createJsonInterfaceRegistry(summary)
+        : null;
 
-      stats.uniqueStructures = stats.uniqueSignatures.size;
-      stats.displayedNodes = countDisplayedNodes(summary);
+      stats.uniqueStructures = interfaceRegistry
+        ? interfaceRegistry.entries.length
+        : stats.uniqueSignatures.size;
+      stats.displayedNodes = interfaceRegistry
+        ? countInterfaceDisplayedNodes(summary, interfaceRegistry)
+        : countDisplayedNodes(summary);
 
       state.rawFormat = parsedResult.format;
       state.summary = summary;
+      state.interfaceRegistry = interfaceRegistry;
       state.stats = stats;
       state.treeExpanded = !!options.openTree;
-      state.aiText = buildAiText(summary, stats, options);
+      state.aiText = buildAiText(summary, stats, options, interfaceRegistry);
 
       updateMeta();
-      renderResult(summary, stats, options);
+      renderResult(summary, stats, options, interfaceRegistry);
       setStatus(
-        `解析完成：已识别为 ${getFormatLabel(parsedResult.format)}，共 ${formatNumber(stats.totalNodes)} 个原始节点，压缩后显示 ${formatNumber(stats.displayedNodes)} 个结构节点。`,
+        `解析完成：已识别为 ${getFormatLabel(parsedResult.format)}，共 ${formatNumber(stats.totalNodes)} 个原始节点，压缩后显示 ${formatNumber(stats.displayedNodes)} 个结构节点${interfaceRegistry ? '，并已切换为 interface 摘要模式' : ''}。`,
         'success'
       );
     }
@@ -1473,7 +2334,7 @@
       toggleAllTreeNodes();
     });
 
-    [refs.mergeSiblings, refs.showAttributes, refs.showTextMarkers, refs.openTree].forEach((element) => {
+    [refs.mergeSiblings, refs.showAttributes, refs.showTextMarkers, refs.openTree, refs.useJsonInterfaces].forEach((element) => {
       element.addEventListener('change', () => {
         reRenderIfReady();
       });
