@@ -546,14 +546,6 @@
 </head>
 <body>
   <main class="page">
-    <section class="hero">
-      <h1>XML / JSON 结构查看器</h1>
-      <p>
-        把 XML 或 JSON 内容（例如 KML、SVG、XSD、GeoJSON、普通接口响应等）拖进来，页面会只保留“结构信息”：节点层级、键名、属性名、重复次数、
-        文本或值类型占位，自动过滤掉大段正文、海量坐标和重复列表。这样你就能把“瘦身版结构摘要”发给 AI，而不是把整片数据洪流一股脑塞过去。
-      </p>
-    </section>
-
     <section class="layout">
       <section class="panel">
         <div class="panel-header">
@@ -581,6 +573,13 @@
 
           <div class="toggle-grid">
             <label class="toggle">
+              <input id="useJsonInterfaces" type="checkbox">
+              <span>
+                <strong>JSON 启用 interface 结构</strong>
+                仅对 JSON 生效。把对象结构抽成类似 TypeScript interface 的定义，入口结构只保留接口 / 类型引用，适合深层 tree、children 递归数据。
+              </span>
+            </label>
+            <label class="toggle">
               <input id="mergeSiblings" type="checkbox" checked>
               <span>
                 <strong>合并相同兄弟节点</strong>
@@ -606,13 +605,6 @@
               <span>
                 <strong>默认展开前两层</strong>
                 结构太深时能更清爽；不勾选则全部折叠，从根开始慢慢看。
-              </span>
-            </label>
-            <label class="toggle">
-              <input id="useJsonInterfaces" type="checkbox">
-              <span>
-                <strong>JSON 启用 interface 结构</strong>
-                仅对 JSON 生效。把对象结构抽成类似 TypeScript interface 的定义，入口结构只保留接口 / 类型引用，适合深层 tree、children 递归数据。
               </span>
             </label>
           </div>
