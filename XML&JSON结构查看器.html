@@ -1128,6 +1128,7 @@
     function collectTextInfo(element) {
       let hasText = false;
       let textCharCount = 0;
+      const textParts = [];
 
       for (const child of element.childNodes) {
         if (child.nodeType === Node.TEXT_NODE || child.nodeType === Node.CDATA_SECTION_NODE) {
@@ -1135,11 +1136,12 @@
           if (normalized) {
             hasText = true;
             textCharCount += normalized.length;
+            textParts.push(normalized);
           }
         }
       }
 
-      return { hasText, textCharCount };
+      return { hasText, textCharCount, textContent: textParts.join(' ') };
     }
 
     function groupChildSummaries(childSummaries, options) {
@@ -1166,8 +1168,9 @@
     }
 
     function summarizeXmlElement(element, depth, options, stats) {
-      const attrNames = Array.from(element.attributes || [], (attribute) => attribute.name)
-        .sort((left, right) => left.localeCompare(right));
+      const attrList = Array.from(element.attributes || [], (attribute) => ({ name: attribute.name, value: attribute.value }))
+        .sort((left, right) => left.name.localeCompare(right.name));
+      const attrNames = attrList.map(a => a.name);
       const textInfo = collectTextInfo(element);
 
       stats.totalNodes += 1;
@@ -1192,7 +1195,9 @@
         name: element.nodeName,
         kind: 'xml-element',
         attrNames,
+        attrValues: Object.fromEntries(attrList.map(a => [a.name, a.value])),
         hasText: textInfo.hasText,
+        textContent: textInfo.textContent,
         textCharCount: textInfo.textCharCount,
         childGroups,
         signature
@@ -1258,6 +1263,7 @@
         kind: 'json-value',
         valueType,
         stringLength: valueType === 'string' ? String(value).length : 0,
+        valuePreview: String(value),
         childGroups: [],
         signature
       };
@@ -2258,25 +2264,58 @@
       return wrapper;
     }
 
+    function formatExampleValue(text, charCount) {
+      const MAX_PREVIEW = 80;
+      if (charCount > MAX_PREVIEW) {
+        return ` → "${text.substring(0, MAX_PREVIEW)}…" …(${formatNumber(charCount)}字符)`;
+      }
+      return ` → "${text}"`;
+    }
+
     function summaryToLines(summary, count = 1, depth = 0, options = getOptions(), ancestorKeys = []) {
       const indent = '  '.repeat(depth);
-      const hints = [];
       const isRecursive = shouldCollapseRecursive(summary, ancestorKeys);
 
-      if (count > 1) {
-        hints.push(`x${count}`);
+      const isJsonPrimitive = !isRecursive && summary.kind === 'json-value';
+      const isXmlTextLeaf = !isRecursive && summary.kind === 'xml-element' && summary.textContent && summary.childGroups.length === 0;
+
+      let countStr = count > 1 ? ` (×${formatNumber(count)})` : '';
+      let valueStr = '';
+
+      if (isXmlTextLeaf) {
+        valueStr = formatExampleValue(summary.textContent, summary.textCharCount);
+      } else if (isJsonPrimitive) {
+        if (summary.valueType === 'string') {
+          valueStr = formatExampleValue(summary.valuePreview, summary.stringLength);
+        } else if (summary.valueType === 'null') {
+          valueStr = ' → null';
+        } else {
+          valueStr = ` → ${summary.valuePreview}`;
+        }
       }
 
-      getNodeHints(summary, options).forEach((hint) => {
-        hints.push(hint.lineText || hint.text);
-      });
+      const hints = [];
 
-      if (isRecursive) {
-        const recursiveHint = getRecursiveHint();
-        hints.push(recursiveHint.lineText);
+      if (!(isXmlTextLeaf || isJsonPrimitive)) {
+        if (summary.kind === 'xml-element' && options.showAttributes && summary.attrNames && summary.attrNames.length > 0) {
+          const attrStrs = summary.attrNames.map(an => {
+            const val = (summary.attrValues && summary.attrValues[an]) || '';
+            return `${an}="${val}"`;
+          });
+          hints.push(attrStrs.join(' '));
+        }
+
+        getNodeHints(summary, options).forEach((hint) => {
+          hints.push(hint.lineText || hint.text);
+        });
+
+        if (isRecursive) {
+          const recursiveHint = getRecursiveHint();
+          hints.push(recursiveHint.lineText);
+        }
       }
 
-      const lines = [`${indent}- ${summary.name}${hints.length ? ` [${hints.join(' | ')}]` : ''}`];
+      const lines = [`${indent}- ${summary.name}${countStr}${hints.length ? ` [${hints.join(' | ')}]` : ''}${valueStr}`];
 
       if (isRecursive) {
         return lines;
@@ -2339,7 +2378,7 @@
           '说明：',
           '- 已启用 JSON interface 结构展示：对象会先抽成类似 TypeScript interface 的定义，入口结构只保留接口 / 类型引用。',
           '- 字段集合相同的对象会自动合并成同一个 interface；字段类型差异会提升为联合类型，例如 `string | null`。',
-          '- 已移除 XML 属性值、文本正文以及 JSON 的真实值，只保留结构与类型信息。',
+          '- XML 属性会展示为 `[attr="value"]` 格式，文本内容展示为 `→ "value"`；JSON 原始值也以其字面形式展示。',
           '- 递归 tree / children 结构会自动压缩为自引用类型，例如 `Root[]` 或 `Array<Node | Leaf>`。',
           '- `InterfaceName[]` / `Array<A | B>` 表示数组元素类型，不展示真实值。',
         );
@@ -2360,12 +2399,10 @@
         ...summaryToLines(summary, 1, 0, options),
         '',
         '说明：',
-        '- 已移除 XML 属性值、文本正文以及 JSON 的真实值，只保留结构信息。',
-        '- `xN` 表示该层存在 N 个相同结构的重复节点。',
+        '- XML 属性会展示为 `[attr="value"]` 格式，文本内容展示为 `→ "value"`；JSON 原始值也以其字面形式展示。',
+        '- `(×N)` 表示该层存在 N 个相同结构的重复节点。',
         '- `递归重复，后续省略` 表示该分支开始重复祖先中已经出现过的同类结构，后续层级已自动折叠。',
-        '- `属性:` 仅展示 XML 属性名，不展示属性值。',
-        '- `对象 / 数组 / 字符串 / 数字 / 布尔 / null` 表示 JSON 值类型，不展示真实值。',
-        '- `含文本` 只表示 XML 节点包含文本内容，不展示真实文本。'
+        '- 长文本 / 长字符串超过 80 字符时会截断并显示 `…(N字符)`。'
       ];
       return lines.join('\n');
     }
