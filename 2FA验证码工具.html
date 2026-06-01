@@ -1,0 +1,1903 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>2FA 验证码工具</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #060b15;
+      --panel: rgba(9, 18, 34, 0.94);
+      --panel-2: rgba(8, 16, 30, 0.92);
+      --line: rgba(47, 87, 130, 0.52);
+      --text: #deeeff;
+      --muted: #7aa0c7;
+      --accent: #00d4ff;
+      --accent-2: #00ffb3;
+      --accent-3: #7e84ff;
+      --warning: #ffc857;
+      --danger: #ff4f78;
+      --shadow: 0 0 28px rgba(0, 212, 255, 0.08), 0 0 96px rgba(0, 212, 255, 0.03);
+      font-family: "Cascadia Code", "Fira Code", "JetBrains Mono", Consolas, "Courier New", "PingFang SC", "Microsoft YaHei", monospace;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      min-height: 100%;
+    }
+
+    body {
+      color: var(--text);
+      background:
+        radial-gradient(circle at 15% 20%, rgba(0, 212, 255, 0.08), transparent 30%),
+        radial-gradient(circle at 84% 16%, rgba(126, 132, 255, 0.08), transparent 28%),
+        radial-gradient(circle at 50% 84%, rgba(0, 255, 179, 0.05), transparent 34%),
+        linear-gradient(180deg, #060b15 0%, #091221 48%, #060b15 100%);
+      overflow-x: hidden;
+      position: relative;
+    }
+
+    body::before,
+    body::after {
+      content: "";
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+    }
+
+    body::before {
+      background-image:
+        linear-gradient(rgba(0, 212, 255, 0.026) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 212, 255, 0.026) 1px, transparent 1px);
+      background-size: 56px 56px;
+      mask-image: linear-gradient(180deg, transparent, rgba(255, 255, 255, 0.88) 12%, rgba(255, 255, 255, 0.88) 88%, transparent);
+    }
+
+    body::after {
+      background: linear-gradient(180deg, transparent 0%, rgba(0, 212, 255, 0.018) 48%, transparent 100%);
+      animation: scanline 9s linear infinite;
+      opacity: 0.6;
+    }
+
+    @keyframes scanline {
+      from { transform: translateY(-100%); }
+      to { transform: translateY(100%); }
+    }
+
+    ::selection {
+      background: rgba(0, 212, 255, 0.28);
+      color: #fff;
+    }
+
+    .page {
+      position: relative;
+      z-index: 1;
+      width: min(1540px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 24px 0 56px;
+    }
+
+    .page::before {
+      content: "// TOTP MULTI-VAULT :: LOCAL-FIRST";
+      position: fixed;
+      left: 24px;
+      bottom: 24px;
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      color: rgba(0, 212, 255, 0.16);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .panel {
+      position: relative;
+      overflow: hidden;
+      border-radius: 18px;
+      border: 1px solid var(--line);
+      background:
+        linear-gradient(180deg, rgba(10, 20, 38, 0.95), rgba(6, 13, 24, 0.98)),
+        radial-gradient(circle at top right, rgba(0, 212, 255, 0.08), transparent 50%);
+      box-shadow: var(--shadow), inset 0 1px 0 rgba(255, 255, 255, 0.03);
+    }
+
+    .panel::after {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(0, 212, 255, 0.22), transparent);
+      pointer-events: none;
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr);
+      gap: 24px;
+      align-items: center;
+      padding: 28px;
+    }
+
+    .hero-copy {
+      display: grid;
+      gap: 18px;
+    }
+
+    .hero-kicker,
+    .chip,
+    .pill,
+    .toolbar-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      width: fit-content;
+      padding: 7px 12px;
+      border-radius: 999px;
+      font-size: 12px;
+      line-height: 1;
+      white-space: nowrap;
+    }
+
+    .hero-kicker {
+      border: 1px solid rgba(0, 212, 255, 0.18);
+      background: rgba(0, 212, 255, 0.06);
+      color: var(--accent);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .hero-kicker::before {
+      content: "●";
+      color: var(--accent-2);
+      text-shadow: 0 0 14px rgba(0, 255, 179, 0.7);
+      font-size: 10px;
+    }
+
+    .hero h1 {
+      margin: 0;
+      font-size: clamp(32px, 4vw, 48px);
+      line-height: 1.08;
+      letter-spacing: 0.02em;
+      text-shadow: 0 0 22px rgba(0, 212, 255, 0.14);
+    }
+
+    .hero p {
+      margin: 0;
+      max-width: 860px;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.95;
+    }
+
+    .hero-tags,
+    .action-row,
+    .saved-item-actions,
+    .token-meta,
+    .card-actions,
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .chip {
+      border: 1px solid rgba(126, 132, 255, 0.18);
+      background: rgba(126, 132, 255, 0.08);
+      color: #ccd1ff;
+    }
+
+    .hero-side {
+      display: grid;
+      gap: 18px;
+    }
+
+    .ring-wrap {
+      display: grid;
+      place-items: center;
+      padding: 8px;
+    }
+
+    .hero-ring {
+      --angle: 0deg;
+      --ring-color: rgba(0, 212, 255, 0.96);
+      width: min(280px, 100%);
+      aspect-ratio: 1;
+      border-radius: 50%;
+      padding: 16px;
+      display: grid;
+      place-items: center;
+      position: relative;
+      isolation: isolate;
+      background:
+        radial-gradient(circle at center, rgba(0, 212, 255, 0.18), transparent 58%),
+        conic-gradient(from -90deg, var(--ring-color) var(--angle), rgba(0, 212, 255, 0.08) 0deg);
+      box-shadow: 0 0 0 1px rgba(0, 212, 255, 0.12), 0 0 34px rgba(0, 212, 255, 0.12);
+    }
+
+    .hero-ring::before,
+    .hero-ring::after {
+      content: "";
+      position: absolute;
+      border-radius: 50%;
+      pointer-events: none;
+    }
+
+    .hero-ring::before {
+      inset: 14px;
+      border: 1px solid rgba(0, 212, 255, 0.18);
+      box-shadow: inset 0 0 22px rgba(0, 212, 255, 0.05);
+    }
+
+    .hero-ring::after {
+      inset: 38px;
+      background: radial-gradient(circle at center, rgba(12, 24, 44, 0.96), rgba(5, 10, 20, 0.98));
+      border: 1px solid rgba(0, 212, 255, 0.1);
+      z-index: -1;
+    }
+
+    .hero-ring-content {
+      width: 100%;
+      height: 100%;
+      padding: 68px 42px;
+      display: grid;
+      align-content: center;
+      justify-items: center;
+      text-align: center;
+      gap: 10px;
+      border-radius: 50%;
+    }
+
+    .hero-ring-content span {
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .hero-ring-content strong {
+      font-size: clamp(34px, 5vw, 52px);
+      line-height: 1;
+      color: var(--accent);
+      text-shadow: 0 0 22px rgba(0, 212, 255, 0.24);
+    }
+
+    .hero-ring-content em {
+      font-style: normal;
+      color: var(--text);
+      font-size: 13px;
+      line-height: 1.8;
+      max-width: 220px;
+      word-break: break-word;
+    }
+
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .metric-card,
+    .note-card,
+    .toolbar-chip,
+    .saved-item,
+    .token-card,
+    .status,
+    .otp-frame,
+    .secret-preview,
+    .empty-state {
+      border-radius: 16px;
+      border: 1px solid rgba(47, 87, 130, 0.48);
+      background: rgba(10, 18, 34, 0.66);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
+    }
+
+    .metric-card {
+      padding: 14px 16px;
+      min-height: 92px;
+    }
+
+    .metric-card span {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+    }
+
+    .metric-card strong {
+      display: block;
+      font-size: clamp(18px, 2.2vw, 24px);
+      line-height: 1.35;
+      color: var(--accent);
+      word-break: break-word;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(340px, 470px) minmax(0, 1fr);
+      gap: 24px;
+      margin-top: 24px;
+      align-items: start;
+    }
+
+    .panel-header {
+      padding: 24px 24px 14px;
+      border-bottom: 1px solid rgba(47, 87, 130, 0.3);
+    }
+
+    .panel-header h2 {
+      margin: 0;
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--accent);
+      font-size: 20px;
+      letter-spacing: 0.02em;
+    }
+
+    .panel-header h2::before {
+      content: ">";
+      color: var(--accent-2);
+      opacity: 0.8;
+    }
+
+    .panel-header p {
+      margin: 10px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.85;
+    }
+
+    .panel-body {
+      padding: 22px 24px 24px;
+    }
+
+    .field-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .field {
+      display: grid;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 12px;
+      letter-spacing: 0.02em;
+    }
+
+    .field--wide {
+      grid-column: 1 / -1;
+    }
+
+    .field input,
+    .field textarea,
+    .field select {
+      width: 100%;
+      border: 1px solid rgba(47, 87, 130, 0.56);
+      border-radius: 12px;
+      background: linear-gradient(180deg, rgba(8, 16, 31, 0.96), rgba(5, 10, 20, 0.98));
+      color: var(--text);
+      font: inherit;
+      padding: 12px 14px;
+      outline: none;
+      transition: border-color 180ms ease, box-shadow 180ms ease;
+    }
+
+    .field textarea {
+      min-height: 132px;
+      resize: vertical;
+      line-height: 1.8;
+    }
+
+    .field input::placeholder,
+    .field textarea::placeholder {
+      color: rgba(122, 160, 199, 0.55);
+    }
+
+    .field input:focus,
+    .field textarea:focus,
+    .field select:focus,
+    button:focus-visible {
+      outline: none;
+      border-color: rgba(0, 212, 255, 0.58);
+      box-shadow: 0 0 0 3px rgba(0, 212, 255, 0.12), 0 0 24px rgba(0, 212, 255, 0.08);
+    }
+
+    .saved-list::-webkit-scrollbar,
+    .token-list::-webkit-scrollbar,
+    .field textarea::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+
+    .saved-list::-webkit-scrollbar-thumb,
+    .token-list::-webkit-scrollbar-thumb,
+    .field textarea::-webkit-scrollbar-thumb {
+      background: rgba(0, 212, 255, 0.16);
+      border-radius: 999px;
+    }
+
+    .saved-list::-webkit-scrollbar-track,
+    .token-list::-webkit-scrollbar-track,
+    .field textarea::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    button {
+      appearance: none;
+      border: 1px solid rgba(47, 87, 130, 0.6);
+      border-radius: 12px;
+      padding: 11px 16px;
+      min-height: 44px;
+      background: linear-gradient(180deg, rgba(22, 41, 73, 0.72), rgba(7, 14, 28, 0.95));
+      color: var(--text);
+      font: inherit;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 180ms ease;
+      letter-spacing: 0.02em;
+    }
+
+    button:hover {
+      transform: translateY(-1px);
+      border-color: rgba(0, 212, 255, 0.58);
+      box-shadow: 0 0 18px rgba(0, 212, 255, 0.09);
+      color: var(--accent);
+    }
+
+    button:active {
+      transform: translateY(1px);
+    }
+
+    button.primary {
+      background: linear-gradient(180deg, rgba(0, 212, 255, 0.22), rgba(0, 122, 168, 0.18));
+      border-color: rgba(0, 212, 255, 0.4);
+      color: #effcff;
+    }
+
+    button.secondary {
+      background: linear-gradient(180deg, rgba(0, 255, 179, 0.16), rgba(0, 92, 72, 0.12));
+      border-color: rgba(0, 255, 179, 0.28);
+      color: #b7ffe6;
+    }
+
+    button.ghost {
+      background: linear-gradient(180deg, rgba(126, 132, 255, 0.16), rgba(66, 66, 132, 0.12));
+      border-color: rgba(126, 132, 255, 0.28);
+      color: #ccd1ff;
+    }
+
+    button.danger {
+      background: linear-gradient(180deg, rgba(255, 79, 120, 0.16), rgba(92, 24, 43, 0.12));
+      border-color: rgba(255, 79, 120, 0.24);
+      color: #ff9cb2;
+    }
+
+    button.small {
+      min-height: 38px;
+      padding: 9px 12px;
+      border-radius: 10px;
+      font-size: 12px;
+    }
+
+    .status {
+      margin-top: 16px;
+      min-height: 52px;
+      padding: 14px 16px 14px 40px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.8;
+      position: relative;
+    }
+
+    .status::before {
+      content: "$";
+      position: absolute;
+      left: 16px;
+      top: 14px;
+      color: var(--accent-2);
+      font-weight: 700;
+    }
+
+    .status.success {
+      border-color: rgba(0, 255, 179, 0.26);
+      background: rgba(0, 255, 179, 0.07);
+      color: #9ff7d8;
+    }
+
+    .status.success::before {
+      content: ">";
+    }
+
+    .status.error {
+      border-color: rgba(255, 79, 120, 0.26);
+      background: rgba(255, 79, 120, 0.08);
+      color: #ff98b2;
+    }
+
+    .status.error::before {
+      content: "!";
+      color: var(--danger);
+    }
+
+    .note-grid {
+      display: grid;
+      gap: 12px;
+      margin-top: 16px;
+    }
+
+    .note-card {
+      padding: 14px 16px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.85;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .note-card::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(90deg, rgba(0, 212, 255, 0.03), transparent 35%, rgba(0, 255, 179, 0.03));
+      pointer-events: none;
+    }
+
+    .note-card strong {
+      color: var(--text);
+    }
+
+    .saved-wrap {
+      margin-top: 18px;
+      display: grid;
+      gap: 12px;
+    }
+
+    .saved-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .saved-header h3 {
+      margin: 0;
+      font-size: 14px;
+      color: var(--text);
+    }
+
+    .saved-list,
+    .token-list {
+      overflow: auto;
+    }
+
+    .saved-list {
+      display: grid;
+      gap: 12px;
+      max-height: 360px;
+      padding-right: 4px;
+    }
+
+    .saved-item {
+      padding: 14px;
+      display: grid;
+      gap: 10px;
+      background: linear-gradient(180deg, rgba(12, 23, 42, 0.88), rgba(6, 13, 24, 0.96));
+    }
+
+    .saved-item strong {
+      display: block;
+      font-size: 13px;
+      color: var(--text);
+      line-height: 1.7;
+    }
+
+    .saved-item p,
+    .saved-item small {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.7;
+      word-break: break-word;
+    }
+
+    .vault-panel {
+      min-height: 760px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .toolbar {
+      padding: 18px 24px 0;
+    }
+
+    .toolbar-chip {
+      color: var(--muted);
+      border-color: rgba(47, 87, 130, 0.48);
+      background: rgba(10, 18, 34, 0.66);
+    }
+
+    .token-list {
+      flex: 1;
+      padding: 22px 24px 24px;
+    }
+
+    .token-grid {
+      display: grid;
+      gap: 16px;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    }
+
+    .token-card {
+      padding: 18px;
+      display: grid;
+      gap: 14px;
+      background: linear-gradient(180deg, rgba(12, 23, 42, 0.92), rgba(6, 13, 24, 0.98));
+      transition: border-color 180ms ease, transform 180ms ease, box-shadow 180ms ease;
+    }
+
+    .token-card:hover {
+      transform: translateY(-2px);
+      border-color: rgba(0, 212, 255, 0.24);
+      box-shadow: 0 0 18px rgba(0, 212, 255, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.02);
+    }
+
+    .token-card[data-level="warn"] {
+      border-color: rgba(255, 200, 87, 0.42);
+      box-shadow: 0 0 18px rgba(255, 200, 87, 0.06);
+    }
+
+    .token-card[data-level="danger"] {
+      border-color: rgba(255, 79, 120, 0.42);
+      box-shadow: 0 0 18px rgba(255, 79, 120, 0.09);
+    }
+
+    .token-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 14px;
+    }
+
+    .token-eyebrow {
+      display: inline-block;
+      margin-bottom: 8px;
+      color: rgba(122, 160, 199, 0.78);
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .token-header h3 {
+      margin: 0;
+      color: #f1fbff;
+      font-size: 20px;
+      line-height: 1.3;
+      word-break: break-word;
+    }
+
+    .token-subline {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.8;
+      word-break: break-word;
+    }
+
+    .token-badge {
+      flex-shrink: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 72px;
+      padding: 8px 12px;
+      border-radius: 12px;
+      border: 1px solid rgba(0, 212, 255, 0.18);
+      background: rgba(0, 212, 255, 0.08);
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .otp-frame {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: center;
+      padding: 14px;
+      background:
+        linear-gradient(180deg, rgba(0, 212, 255, 0.08), rgba(0, 212, 255, 0.02)),
+        rgba(8, 16, 31, 0.7);
+      border-color: rgba(0, 212, 255, 0.16);
+    }
+
+    .otp-code {
+      font-size: clamp(28px, 4vw, 36px);
+      line-height: 1;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      color: #f7fdff;
+      text-shadow: 0 0 18px rgba(0, 212, 255, 0.2);
+      word-break: break-all;
+    }
+
+    .countdown-group {
+      display: grid;
+      gap: 10px;
+    }
+
+    .progress-track {
+      height: 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(47, 87, 130, 0.4);
+      background: rgba(255, 255, 255, 0.05);
+      overflow: hidden;
+      position: relative;
+    }
+
+    .progress-track span {
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 0;
+      border-radius: inherit;
+      background: linear-gradient(90deg, var(--accent-2), var(--accent));
+      box-shadow: 0 0 16px rgba(0, 212, 255, 0.2);
+      transition: width 180ms linear, background 180ms linear;
+    }
+
+    .token-card[data-level="warn"] .progress-track span {
+      background: linear-gradient(90deg, #ffd86b, #ffc857);
+    }
+
+    .token-card[data-level="danger"] .progress-track span {
+      background: linear-gradient(90deg, #ff8faf, #ff4f78);
+    }
+
+    .countdown-inline {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.7;
+    }
+
+    .countdown-inline strong {
+      color: var(--text);
+    }
+
+    .pill {
+      border: 1px solid rgba(0, 212, 255, 0.14);
+      background: rgba(0, 212, 255, 0.06);
+      color: var(--accent);
+      font-size: 11px;
+    }
+
+    .pill.alt {
+      border-color: rgba(126, 132, 255, 0.18);
+      background: rgba(126, 132, 255, 0.08);
+      color: #ccd1ff;
+    }
+
+    .pill.good {
+      border-color: rgba(0, 255, 179, 0.18);
+      background: rgba(0, 255, 179, 0.08);
+      color: #a7ffe2;
+    }
+
+    .secret-preview {
+      padding: 12px 14px;
+      display: grid;
+      gap: 8px;
+      background: rgba(8, 15, 28, 0.72);
+    }
+
+    .secret-preview span {
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .secret-preview code {
+      color: #dff0ff;
+      font-size: 12px;
+      line-height: 1.8;
+      word-break: break-all;
+      white-space: normal;
+    }
+
+    .card-actions {
+      justify-content: flex-end;
+    }
+
+    .empty-state {
+      margin: 24px;
+      min-height: 280px;
+      display: grid;
+      place-items: center;
+      text-align: center;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.9;
+      padding: 24px;
+      border-style: dashed;
+      background: rgba(0, 212, 255, 0.04);
+    }
+
+    .empty-state::before {
+      content: "<OTP/>";
+      display: block;
+      font-size: 36px;
+      color: rgba(0, 212, 255, 0.18);
+      margin-bottom: 10px;
+      letter-spacing: 0.08em;
+    }
+
+    .hidden { display: none !important; }
+
+    @media (max-width: 1200px) {
+      .hero,
+      .layout {
+        grid-template-columns: 1fr;
+      }
+
+      .hero-side {
+        grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
+        align-items: center;
+      }
+    }
+
+    @media (max-width: 820px) {
+      .page {
+        width: min(100% - 18px, 100%);
+        padding-top: 12px;
+      }
+
+      .page::before { display: none; }
+
+      .hero,
+      .panel-header,
+      .panel-body,
+      .toolbar,
+      .token-list {
+        padding-left: 16px;
+        padding-right: 16px;
+      }
+
+      .hero {
+        padding-top: 20px;
+        padding-bottom: 20px;
+      }
+
+      .hero-side,
+      .metric-grid,
+      .field-grid,
+      .token-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .otp-frame { grid-template-columns: 1fr; }
+
+      .card-actions button,
+      .saved-item-actions button {
+        flex: 1 1 0;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="panel hero">
+      <div class="hero-copy">
+        <span class="hero-kicker">2FA / TOTP / Base32 Vault</span>
+        <div>
+          <h1>2FA 验证码矩阵</h1>
+          <p>在一个页面里管理多个 Base32 密钥，实时生成标准 TOTP 验证码，并持续显示当前验证码还剩多少有效时间。所有数据仅保存在当前浏览器本地，不会主动联网；更像一个安静工作的赛博仪表盘。</p>
+        </div>
+        <div class="hero-tags">
+          <span class="chip">多密钥管理</span>
+          <span class="chip">实时倒计时</span>
+          <span class="chip">本地持久化</span>
+          <span class="chip">科技风界面</span>
+        </div>
+      </div>
+
+      <div class="hero-side">
+        <div class="ring-wrap">
+          <div id="heroRing" class="hero-ring" style="--angle: 0deg; --ring-color: rgba(0, 212, 255, 0.96);">
+            <div class="hero-ring-content">
+              <span>最近刷新倒计时</span>
+              <strong id="heroRemaining">30.0s</strong>
+              <em id="heroTarget">等待添加令牌</em>
+            </div>
+          </div>
+        </div>
+
+        <div class="metric-grid">
+          <div class="metric-card">
+            <span>已保存令牌</span>
+            <strong id="metricCount">0</strong>
+          </div>
+          <div class="metric-card">
+            <span>常用刷新周期</span>
+            <strong id="metricPeriod">30s</strong>
+          </div>
+          <div class="metric-card">
+            <span>当前本地时间</span>
+            <strong id="metricClock">--:--:--</strong>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="layout">
+      <section class="panel">
+        <div class="panel-header">
+          <h2>令牌管理</h2>
+          <p>支持新增、编辑、删除、导入、导出多个 Base32 密钥；也支持直接粘贴 <code>otpauth://totp/...</code> URI 自动提取信息。</p>
+        </div>
+
+        <div class="panel-body">
+          <form id="secretForm" novalidate>
+            <div class="field-grid">
+              <label class="field field--wide">
+                <span>显示名称</span>
+                <input id="labelInput" type="text" maxlength="80" placeholder="例如：GitHub / Admin / 生产环境" autocomplete="off">
+              </label>
+
+              <label class="field">
+                <span>服务商 / Issuer</span>
+                <input id="issuerInput" type="text" maxlength="80" placeholder="例如：GitHub" autocomplete="off">
+              </label>
+
+              <label class="field">
+                <span>账号 / 邮箱</span>
+                <input id="accountInput" type="text" maxlength="120" placeholder="例如：name@example.com" autocomplete="off">
+              </label>
+
+              <label class="field field--wide">
+                <span>Base32 密钥或 otpauth URI</span>
+                <textarea id="secretInput" spellcheck="false" placeholder="输入 Base32 密钥（支持空格 / 短横线），或直接粘贴 otpauth://totp/... URI。"></textarea>
+              </label>
+
+              <label class="field">
+                <span>验证码位数</span>
+                <select id="digitsInput">
+                  <option value="6" selected>6 位</option>
+                  <option value="8">8 位</option>
+                </select>
+              </label>
+
+              <label class="field">
+                <span>刷新周期（秒）</span>
+                <input id="periodInput" type="number" min="10" max="300" step="5" value="30" inputmode="numeric">
+              </label>
+            </div>
+
+            <div class="action-row" style="margin-top: 18px;">
+              <button id="saveButton" class="primary" type="submit">保存令牌</button>
+              <button id="resetButton" class="ghost" type="button">重置表单</button>
+              <button id="importButton" class="secondary" type="button">导入配置</button>
+              <button id="exportButton" class="secondary" type="button">导出配置</button>
+              <button id="clearAllButton" class="danger" type="button">清空全部</button>
+            </div>
+
+            <div id="status" class="status">准备就绪。输入 Base32 密钥后点击“保存令牌”，右侧就会开始实时滚动验证码与剩余有效时间。</div>
+
+            <div class="note-grid">
+              <div class="note-card"><strong>存储位置：</strong> 所有令牌仅保存在当前浏览器的 <code>localStorage</code> 中。换浏览器、清缓存或清站点数据后，它们都会原地消失。</div>
+              <div class="note-card"><strong>兼容说明：</strong> 页面按标准 TOTP（RFC 6238）生成验证码，默认 30 秒窗口与 6 位验证码；如果导入的是 otpauth URI，会自动读取其中的位数与周期配置。</div>
+              <div class="note-card"><strong>安全提醒：</strong> 这是本地工具页，不建议在公用电脑长期保存生产环境 2FA 密钥。浏览器缓存不是保险柜，它顶多算个还挺努力的抽屉。</div>
+            </div>
+          </form>
+
+          <div class="saved-wrap">
+            <div class="saved-header">
+              <h3>已保存快速列表</h3>
+              <span id="savedCount" class="chip">0 条记录</span>
+            </div>
+            <div id="savedList" class="saved-list">
+              <div class="saved-item">暂无令牌。先新增一条 Base32 记录，右侧验证码矩阵就会开始工作。</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel vault-panel">
+        <div class="panel-header">
+          <h2>验证码矩阵</h2>
+          <p>每个令牌都会实时显示当前 TOTP 验证码、剩余有效时间和下次刷新时刻；快过期时自动切换预警色，提醒你别抄慢了。</p>
+        </div>
+
+        <div class="toolbar">
+          <span class="toolbar-chip">实时刷新 · 200ms</span>
+          <span class="toolbar-chip">本地优先 · 不依赖后端</span>
+          <span class="toolbar-chip">标准 TOTP · SHA-1</span>
+        </div>
+
+        <div id="emptyState" class="empty-state">当前还没有令牌。<br>先在左侧录入一个 Base32 密钥，右侧就会开始实时生成验证码。</div>
+        <div class="token-list">
+          <div id="tokenList" class="token-grid"></div>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <input id="importInput" type="file" accept=".json,application/json" class="hidden">
+
+  <script>
+    const STORAGE_KEY = 'copilot-2fa-vault-v1';
+    const DEFAULT_PERIOD = 30;
+    const DEFAULT_DIGITS = 6;
+    const TICK_INTERVAL = 200;
+    const timeFormatter = new Intl.DateTimeFormat('zh-CN', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false
+    });
+
+    const refs = {
+      secretForm: document.getElementById('secretForm'),
+      labelInput: document.getElementById('labelInput'),
+      issuerInput: document.getElementById('issuerInput'),
+      accountInput: document.getElementById('accountInput'),
+      secretInput: document.getElementById('secretInput'),
+      digitsInput: document.getElementById('digitsInput'),
+      periodInput: document.getElementById('periodInput'),
+      saveButton: document.getElementById('saveButton'),
+      resetButton: document.getElementById('resetButton'),
+      importButton: document.getElementById('importButton'),
+      exportButton: document.getElementById('exportButton'),
+      clearAllButton: document.getElementById('clearAllButton'),
+      importInput: document.getElementById('importInput'),
+      status: document.getElementById('status'),
+      savedCount: document.getElementById('savedCount'),
+      savedList: document.getElementById('savedList'),
+      tokenList: document.getElementById('tokenList'),
+      emptyState: document.getElementById('emptyState'),
+      metricCount: document.getElementById('metricCount'),
+      metricPeriod: document.getElementById('metricPeriod'),
+      metricClock: document.getElementById('metricClock'),
+      heroRemaining: document.getElementById('heroRemaining'),
+      heroTarget: document.getElementById('heroTarget'),
+      heroRing: document.getElementById('heroRing')
+    };
+
+    const state = {
+      entries: [],
+      editingId: '',
+      runtime: new Map(),
+      cardRefs: new Map(),
+      timer: null,
+      selfTestPassed: false
+    };
+
+    function setStatus(message, type = '') {
+      refs.status.textContent = message;
+      refs.status.className = 'status' + (type ? ` ${type}` : '');
+    }
+
+    function formatNumber(value) {
+      return new Intl.NumberFormat('zh-CN').format(value);
+    }
+
+    function formatRemaining(remainingMs) {
+      return `${(Math.max(0, remainingMs) / 1000).toFixed(1)}s`;
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? '').replace(/[&<>"']/g, (char) => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+      }[char]));
+    }
+
+    function createId() {
+      if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+        return crypto.randomUUID();
+      }
+      return `token-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+    }
+
+    function normalizeText(value) {
+      return String(value || '').trim();
+    }
+
+    function normalizeBase32Secret(value) {
+      return String(value || '')
+        .toUpperCase()
+        .replace(/\s+/g, '')
+        .replace(/-/g, '')
+        .replace(/=+$/g, '');
+    }
+
+    function decodeBase32(secret) {
+      const normalized = normalizeBase32Secret(secret);
+      if (!normalized) {
+        throw new Error('Base32 密钥不能为空。');
+      }
+      if (!/^[A-Z2-7]+$/.test(normalized)) {
+        throw new Error('Base32 密钥包含非法字符，只允许 A-Z 和 2-7。');
+      }
+
+      const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+      let buffer = 0;
+      let bitsLeft = 0;
+      const output = [];
+
+      for (const char of normalized) {
+        const value = alphabet.indexOf(char);
+        buffer = (buffer << 5) | value;
+        bitsLeft += 5;
+        if (bitsLeft >= 8) {
+          output.push((buffer >>> (bitsLeft - 8)) & 0xff);
+          bitsLeft -= 8;
+        }
+      }
+
+      if (output.length === 0) {
+        throw new Error('Base32 密钥解码失败。');
+      }
+
+      return new Uint8Array(output);
+    }
+
+    function concatBytes(...arrays) {
+      const totalLength = arrays.reduce((sum, array) => sum + array.length, 0);
+      const result = new Uint8Array(totalLength);
+      let offset = 0;
+      arrays.forEach((array) => {
+        result.set(array, offset);
+        offset += array.length;
+      });
+      return result;
+    }
+
+    function leftRotate(value, bits) {
+      return ((value << bits) | (value >>> (32 - bits))) >>> 0;
+    }
+
+    function sha1(bytes) {
+      const message = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+      const originalLength = message.length;
+      const bitLength = originalLength * 8;
+      const withOne = originalLength + 1;
+      const zeroPadLength = (64 - ((withOne + 8) % 64)) % 64;
+      const totalLength = withOne + zeroPadLength + 8;
+      const buffer = new Uint8Array(totalLength);
+      const view = new DataView(buffer.buffer);
+      const words = new Uint32Array(80);
+
+      buffer.set(message);
+      buffer[originalLength] = 0x80;
+      view.setUint32(totalLength - 8, Math.floor(bitLength / 0x100000000));
+      view.setUint32(totalLength - 4, bitLength >>> 0);
+
+      let h0 = 0x67452301;
+      let h1 = 0xefcdab89;
+      let h2 = 0x98badcfe;
+      let h3 = 0x10325476;
+      let h4 = 0xc3d2e1f0;
+
+      for (let offset = 0; offset < totalLength; offset += 64) {
+        for (let index = 0; index < 16; index += 1) {
+          words[index] = view.getUint32(offset + index * 4);
+        }
+        for (let index = 16; index < 80; index += 1) {
+          words[index] = leftRotate(words[index - 3] ^ words[index - 8] ^ words[index - 14] ^ words[index - 16], 1);
+        }
+
+        let a = h0;
+        let b = h1;
+        let c = h2;
+        let d = h3;
+        let e = h4;
+
+        for (let index = 0; index < 80; index += 1) {
+          let f = 0;
+          let k = 0;
+          if (index < 20) {
+            f = (b & c) | (~b & d);
+            k = 0x5a827999;
+          } else if (index < 40) {
+            f = b ^ c ^ d;
+            k = 0x6ed9eba1;
+          } else if (index < 60) {
+            f = (b & c) | (b & d) | (c & d);
+            k = 0x8f1bbcdc;
+          } else {
+            f = b ^ c ^ d;
+            k = 0xca62c1d6;
+          }
+
+          const temp = (leftRotate(a, 5) + f + e + k + words[index]) >>> 0;
+          e = d;
+          d = c;
+          c = leftRotate(b, 30);
+          b = a;
+          a = temp;
+        }
+
+        h0 = (h0 + a) >>> 0;
+        h1 = (h1 + b) >>> 0;
+        h2 = (h2 + c) >>> 0;
+        h3 = (h3 + d) >>> 0;
+        h4 = (h4 + e) >>> 0;
+      }
+
+      const digest = new Uint8Array(20);
+      const digestView = new DataView(digest.buffer);
+      digestView.setUint32(0, h0);
+      digestView.setUint32(4, h1);
+      digestView.setUint32(8, h2);
+      digestView.setUint32(12, h3);
+      digestView.setUint32(16, h4);
+      return digest;
+    }
+
+    function hmacSha1(key, message) {
+      const blockSize = 64;
+      let workingKey = key;
+      if (workingKey.length > blockSize) {
+        workingKey = sha1(workingKey);
+      }
+      if (workingKey.length < blockSize) {
+        const padded = new Uint8Array(blockSize);
+        padded.set(workingKey);
+        workingKey = padded;
+      }
+
+      const outer = new Uint8Array(blockSize);
+      const inner = new Uint8Array(blockSize);
+      for (let index = 0; index < blockSize; index += 1) {
+        outer[index] = workingKey[index] ^ 0x5c;
+        inner[index] = workingKey[index] ^ 0x36;
+      }
+
+      return sha1(concatBytes(outer, sha1(concatBytes(inner, message))));
+    }
+
+    function counterToBytes(counter) {
+      const bytes = new Uint8Array(8);
+      let value = counter;
+      for (let index = 7; index >= 0; index -= 1) {
+        bytes[index] = value & 0xff;
+        value = Math.floor(value / 256);
+      }
+      return bytes;
+    }
+
+    function generateTotp(secretBytes, counter, digits) {
+      const hash = hmacSha1(secretBytes, counterToBytes(counter));
+      const offset = hash[hash.length - 1] & 0x0f;
+      const binary = ((hash[offset] & 0x7f) << 24)
+        | ((hash[offset + 1] & 0xff) << 16)
+        | ((hash[offset + 2] & 0xff) << 8)
+        | (hash[offset + 3] & 0xff);
+      return String(binary % (10 ** digits)).padStart(digits, '0');
+    }
+
+    function runSelfTest() {
+      try {
+        const secretBytes = decodeBase32('GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ');
+        const tests = [
+          { epoch: 59, expected: '94287082' },
+          { epoch: 1111111109, expected: '07081804' },
+          { epoch: 1111111111, expected: '14050471' }
+        ];
+        state.selfTestPassed = tests.every((test) => generateTotp(secretBytes, Math.floor(test.epoch / 30), 8) === test.expected);
+      } catch (error) {
+        state.selfTestPassed = false;
+      }
+      if (!state.selfTestPassed) {
+        setStatus('TOTP 自检失败：当前页面的验证码计算结果不可信。', 'error');
+      }
+    }
+
+    function parseOtpAuthUri(rawValue) {
+      const raw = normalizeText(rawValue);
+      if (!/^otpauth:\/\//i.test(raw)) {
+        return null;
+      }
+
+      let uri;
+      try {
+        uri = new URL(raw);
+      } catch (error) {
+        throw new Error('otpauth URI 解析失败，请检查格式是否完整。');
+      }
+
+      if (uri.protocol !== 'otpauth:' || uri.host.toLowerCase() !== 'totp') {
+        throw new Error('目前仅支持 otpauth://totp/... 格式。');
+      }
+
+      const labelSegment = decodeURIComponent(uri.pathname.replace(/^\/+/, ''));
+      let issuerFromLabel = '';
+      let accountFromLabel = '';
+      let fallbackLabel = labelSegment;
+      if (labelSegment.includes(':')) {
+        const parts = labelSegment.split(':');
+        issuerFromLabel = parts.shift().trim();
+        accountFromLabel = parts.join(':').trim();
+        fallbackLabel = accountFromLabel || issuerFromLabel;
+      }
+
+      const algorithm = String(uri.searchParams.get('algorithm') || 'SHA1').toUpperCase().replace(/-/g, '');
+      if (algorithm !== 'SHA1') {
+        throw new Error('当前工具页暂只支持 SHA-1 的 TOTP。');
+      }
+
+      return {
+        label: fallbackLabel,
+        issuer: normalizeText(uri.searchParams.get('issuer') || issuerFromLabel),
+        account: normalizeText(accountFromLabel),
+        secret: uri.searchParams.get('secret') || '',
+        digits: Number(uri.searchParams.get('digits') || DEFAULT_DIGITS),
+        period: Number(uri.searchParams.get('period') || DEFAULT_PERIOD)
+      };
+    }
+
+    function normalizeDigits(value) {
+      return Number(value) === 8 ? 8 : 6;
+    }
+
+    function normalizePeriod(value) {
+      const number = Number(value);
+      if (!Number.isFinite(number) || number < 10 || number > 300) {
+        throw new Error('刷新周期需要填写 10 到 300 秒之间的整数。');
+      }
+      return Math.round(number);
+    }
+
+    function buildDisplayName(entry, index = 0) {
+      return normalizeText(entry.label)
+        || [normalizeText(entry.issuer), normalizeText(entry.account)].filter(Boolean).join(' / ')
+        || `令牌 ${index + 1}`;
+    }
+
+    function normalizeEntry(rawEntry, index = 0) {
+      const secret = normalizeBase32Secret(rawEntry.secret);
+      return {
+        id: normalizeText(rawEntry.id) || createId(),
+        label: buildDisplayName(rawEntry, index),
+        issuer: normalizeText(rawEntry.issuer),
+        account: normalizeText(rawEntry.account),
+        secret,
+        digits: normalizeDigits(rawEntry.digits),
+        period: normalizePeriod(rawEntry.period || DEFAULT_PERIOD),
+        createdAt: Number(rawEntry.createdAt) || Date.now(),
+        updatedAt: Number(rawEntry.updatedAt) || Date.now(),
+        _secretBytes: decodeBase32(secret)
+      };
+    }
+
+    function stripRuntime(entry) {
+      const { _secretBytes, ...plain } = entry;
+      return plain;
+    }
+
+    function loadEntries() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) {
+          return [];
+        }
+        const parsed = JSON.parse(raw);
+        const list = Array.isArray(parsed) ? parsed : Array.isArray(parsed.entries) ? parsed.entries : [];
+        return list.map((entry, index) => normalizeEntry(entry, index));
+      } catch (error) {
+        console.warn('读取本地令牌失败：', error);
+        return [];
+      }
+    }
+
+    function persistEntries() {
+      try {
+        if (state.entries.length === 0) {
+          localStorage.removeItem(STORAGE_KEY);
+        } else {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(state.entries.map(stripRuntime)));
+        }
+        return true;
+      } catch (error) {
+        setStatus(`本地保存失败：${error.message || '未知错误'}`, 'error');
+        return false;
+      }
+    }
+
+    function maskSecret(secret) {
+      if (!secret) {
+        return '--';
+      }
+      if (secret.length <= 10) {
+        return `${secret.slice(0, 2)}••••${secret.slice(-2)}`;
+      }
+      return `${secret.slice(0, 4)} •••• •••• ${secret.slice(-4)}`;
+    }
+
+    function formatOtpDisplay(code) {
+      if (!code) {
+        return '··· ···';
+      }
+      const midpoint = Math.ceil(code.length / 2);
+      return `${code.slice(0, midpoint)} ${code.slice(midpoint)}`;
+    }
+
+    function computeRemainingMs(now, period) {
+      const periodMs = period * 1000;
+      const elapsed = now % periodMs;
+      return elapsed === 0 ? periodMs : periodMs - elapsed;
+    }
+
+    function getMostCommonPeriod(entries) {
+      const counter = new Map();
+      entries.forEach((entry) => {
+        counter.set(entry.period, (counter.get(entry.period) || 0) + 1);
+      });
+      return [...counter.entries()].sort((left, right) => right[1] - left[1])[0]?.[0] || DEFAULT_PERIOD;
+    }
+
+    function getRuntime(entry) {
+      const runtimeKey = `${entry.secret}|${entry.digits}|${entry.period}`;
+      const existing = state.runtime.get(entry.id);
+      if (existing && existing.key === runtimeKey) {
+        return existing;
+      }
+      const runtime = {
+        key: runtimeKey,
+        secretBytes: entry._secretBytes || decodeBase32(entry.secret),
+        lastCounter: -1,
+        lastCode: ''
+      };
+      state.runtime.set(entry.id, runtime);
+      return runtime;
+    }
+
+    function getCurrentCode(entry, now) {
+      const runtime = getRuntime(entry);
+      const counter = Math.floor(now / (entry.period * 1000));
+      if (runtime.lastCounter !== counter) {
+        runtime.lastCounter = counter;
+        runtime.lastCode = generateTotp(runtime.secretBytes, counter, entry.digits);
+      }
+      return runtime.lastCode;
+    }
+
+    function createEntryPayloadFromForm() {
+      const rawSecretInput = refs.secretInput.value;
+      const uriPayload = parseOtpAuthUri(rawSecretInput);
+      const secret = normalizeBase32Secret(uriPayload ? uriPayload.secret : rawSecretInput);
+      const issuer = normalizeText(refs.issuerInput.value || (uriPayload && uriPayload.issuer) || '');
+      const account = normalizeText(refs.accountInput.value || (uriPayload && uriPayload.account) || '');
+      const label = normalizeText(refs.labelInput.value || (uriPayload && uriPayload.label) || [issuer, account].filter(Boolean).join(' / '));
+      const digits = normalizeDigits(uriPayload ? uriPayload.digits : refs.digitsInput.value);
+      const period = normalizePeriod(uriPayload ? uriPayload.period : refs.periodInput.value || DEFAULT_PERIOD);
+
+      if (!secret) {
+        throw new Error('请先输入 Base32 密钥。');
+      }
+      decodeBase32(secret);
+
+      return {
+        id: state.editingId || createId(),
+        label: label || `令牌 ${state.entries.length + 1}`,
+        issuer,
+        account,
+        secret,
+        digits,
+        period,
+        createdAt: (state.entries.find((entry) => entry.id === state.editingId) || {}).createdAt || Date.now(),
+        updatedAt: Date.now()
+      };
+    }
+
+    function resetForm() {
+      state.editingId = '';
+      refs.secretForm.reset();
+      refs.digitsInput.value = String(DEFAULT_DIGITS);
+      refs.periodInput.value = String(DEFAULT_PERIOD);
+      refs.saveButton.textContent = '保存令牌';
+    }
+
+    function fillForm(entry) {
+      state.editingId = entry.id;
+      refs.labelInput.value = entry.label || '';
+      refs.issuerInput.value = entry.issuer || '';
+      refs.accountInput.value = entry.account || '';
+      refs.secretInput.value = entry.secret || '';
+      refs.digitsInput.value = String(entry.digits || DEFAULT_DIGITS);
+      refs.periodInput.value = String(entry.period || DEFAULT_PERIOD);
+      refs.saveButton.textContent = '更新令牌';
+      refs.labelInput.focus();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function findEntryById(entryId) {
+      return state.entries.find((entry) => entry.id === entryId);
+    }
+
+    function createSavedItem(entry) {
+      const item = document.createElement('article');
+      item.className = 'saved-item';
+      item.dataset.id = entry.id;
+      item.innerHTML = `
+        <div>
+          <strong>${escapeHtml(entry.label)}</strong>
+          <p>${escapeHtml([entry.issuer, entry.account].filter(Boolean).join(' · ') || '未填写服务商 / 账号信息')}</p>
+          <small>Base32：${escapeHtml(maskSecret(entry.secret))}</small>
+        </div>
+        <div class="saved-item-actions">
+          <span class="pill">${entry.digits} 位</span>
+          <span class="pill alt">${entry.period}s</span>
+          <button type="button" class="ghost small" data-action="edit">编辑</button>
+          <button type="button" class="danger small" data-action="delete">删除</button>
+        </div>
+      `;
+      return item;
+    }
+
+    function createTokenCard(entry, index) {
+      const card = document.createElement('article');
+      card.className = 'token-card';
+      card.dataset.id = entry.id;
+      card.dataset.level = 'safe';
+      card.innerHTML = `
+        <div class="token-header">
+          <div>
+            <span class="token-eyebrow">Vault Slot ${String(index + 1).padStart(2, '0')}</span>
+            <h3>${escapeHtml(entry.label)}</h3>
+            <div class="token-subline">${escapeHtml([entry.issuer, entry.account].filter(Boolean).join(' · ') || '未填写服务商 / 账号信息')}</div>
+          </div>
+          <div class="token-badge">${entry.digits} 位</div>
+        </div>
+
+        <div class="otp-frame">
+          <div class="otp-code" data-role="code">··· ···</div>
+          <button type="button" class="primary small" data-action="copy">复制验证码</button>
+        </div>
+
+        <div class="countdown-group">
+          <div class="progress-track"><span data-role="progress"></span></div>
+          <div class="countdown-inline">
+            <span><strong data-role="remaining">剩余 --.-s</strong></span>
+            <span data-role="nextTime">下次刷新 --:--:--</span>
+          </div>
+        </div>
+
+        <div class="token-meta">
+          <span class="pill good">标准 TOTP</span>
+          <span class="pill">${entry.period}s 周期</span>
+          <span class="pill alt">SHA-1</span>
+        </div>
+
+        <div class="secret-preview">
+          <span>Base32 密钥预览</span>
+          <code>${escapeHtml(maskSecret(entry.secret))}</code>
+        </div>
+
+        <div class="card-actions">
+          <button type="button" class="ghost small" data-action="edit">编辑</button>
+          <button type="button" class="danger small" data-action="delete">删除</button>
+        </div>
+      `;
+
+      state.cardRefs.set(entry.id, {
+        card,
+        code: card.querySelector('[data-role="code"]'),
+        progress: card.querySelector('[data-role="progress"]'),
+        remaining: card.querySelector('[data-role="remaining"]'),
+        nextTime: card.querySelector('[data-role="nextTime"]')
+      });
+      return card;
+    }
+
+    function renderSavedList(sortedEntries) {
+      refs.savedList.innerHTML = '';
+      refs.savedCount.textContent = `${formatNumber(sortedEntries.length)} 条记录`;
+      if (sortedEntries.length === 0) {
+        refs.savedList.innerHTML = '<div class="saved-item">暂无令牌。先新增一条 Base32 记录，右侧验证码矩阵就会开始工作。</div>';
+        return;
+      }
+      sortedEntries.forEach((entry) => {
+        refs.savedList.appendChild(createSavedItem(entry));
+      });
+    }
+
+    function renderTokenCards(sortedEntries) {
+      refs.tokenList.innerHTML = '';
+      state.cardRefs.clear();
+      refs.emptyState.classList.toggle('hidden', sortedEntries.length > 0);
+      sortedEntries.forEach((entry, index) => {
+        refs.tokenList.appendChild(createTokenCard(entry, index));
+      });
+    }
+
+    function renderVault() {
+      const sortedEntries = [...state.entries].sort((left, right) => right.updatedAt - left.updatedAt);
+      renderSavedList(sortedEntries);
+      renderTokenCards(sortedEntries);
+      refs.metricCount.textContent = formatNumber(sortedEntries.length);
+      refs.metricPeriod.textContent = `${sortedEntries.length ? getMostCommonPeriod(sortedEntries) : DEFAULT_PERIOD}s`;
+    }
+
+    function updateHero(now) {
+      refs.metricClock.textContent = timeFormatter.format(new Date(now));
+
+      if (state.entries.length === 0) {
+        const remainingMs = computeRemainingMs(now, DEFAULT_PERIOD);
+        const angle = ((DEFAULT_PERIOD * 1000 - remainingMs) / (DEFAULT_PERIOD * 1000)) * 360;
+        refs.heroRemaining.textContent = formatRemaining(remainingMs);
+        refs.heroTarget.textContent = '等待添加令牌';
+        refs.heroRing.style.setProperty('--angle', `${angle}deg`);
+        refs.heroRing.style.setProperty('--ring-color', 'rgba(0, 212, 255, 0.96)');
+        return;
+      }
+
+      const nearest = state.entries
+        .map((entry) => ({
+          entry,
+          remainingMs: computeRemainingMs(now, entry.period),
+          periodMs: entry.period * 1000
+        }))
+        .sort((left, right) => left.remainingMs - right.remainingMs)[0];
+
+      const angle = ((nearest.periodMs - nearest.remainingMs) / nearest.periodMs) * 360;
+      let ringColor = 'rgba(0, 212, 255, 0.96)';
+      if (nearest.remainingMs <= 5000) {
+        ringColor = 'rgba(255, 79, 120, 0.96)';
+      } else if (nearest.remainingMs <= 10000) {
+        ringColor = 'rgba(255, 200, 87, 0.96)';
+      }
+
+      refs.heroRemaining.textContent = formatRemaining(nearest.remainingMs);
+      refs.heroTarget.textContent = `${nearest.entry.label} · ${timeFormatter.format(new Date(now + nearest.remainingMs))} 刷新`;
+      refs.heroRing.style.setProperty('--angle', `${angle}deg`);
+      refs.heroRing.style.setProperty('--ring-color', ringColor);
+    }
+
+    function tick() {
+      const now = Date.now();
+      updateHero(now);
+
+      state.entries.forEach((entry) => {
+        const ref = state.cardRefs.get(entry.id);
+        if (!ref) {
+          return;
+        }
+
+        const periodMs = entry.period * 1000;
+        const remainingMs = computeRemainingMs(now, entry.period);
+        const elapsedMs = periodMs - remainingMs;
+        const ratio = Math.min(1, Math.max(0, elapsedMs / periodMs));
+        const code = getCurrentCode(entry, now);
+
+        ref.code.textContent = formatOtpDisplay(code);
+        ref.remaining.textContent = `剩余 ${formatRemaining(remainingMs)}`;
+        ref.nextTime.textContent = `下次刷新 ${timeFormatter.format(new Date(now + remainingMs))}`;
+        ref.progress.style.width = `${Math.max(ratio * 100, 3)}%`;
+
+        if (remainingMs <= 5000) {
+          ref.card.dataset.level = 'danger';
+        } else if (remainingMs <= 10000) {
+          ref.card.dataset.level = 'warn';
+        } else {
+          ref.card.dataset.level = 'safe';
+        }
+      });
+    }
+
+    function startTicker() {
+      if (state.timer) {
+        clearInterval(state.timer);
+      }
+      tick();
+      state.timer = window.setInterval(tick, TICK_INTERVAL);
+    }
+
+    async function copyText(text) {
+      if (!text) {
+        throw new Error('没有可复制的内容。');
+      }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+        return;
+      }
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.setAttribute('readonly', 'readonly');
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      textarea.remove();
+    }
+
+    function handleDelete(entryId) {
+      const target = findEntryById(entryId);
+      if (!target) {
+        return;
+      }
+      const confirmed = window.confirm(`确认删除令牌“${target.label}”吗？`);
+      if (!confirmed) {
+        return;
+      }
+      state.entries = state.entries.filter((entry) => entry.id !== entryId);
+      state.runtime.delete(entryId);
+      if (state.editingId === entryId) {
+        resetForm();
+      }
+      persistEntries();
+      renderVault();
+      tick();
+      setStatus(`已删除令牌：${target.label}`, 'success');
+    }
+
+    async function handleSave(event) {
+      event.preventDefault();
+      try {
+        const payload = normalizeEntry(createEntryPayloadFromForm(), state.entries.length);
+        const existingIndex = state.entries.findIndex((entry) => entry.id === payload.id);
+        if (existingIndex >= 0) {
+          state.entries.splice(existingIndex, 1, payload);
+          setStatus(`已更新令牌：${payload.label}`, 'success');
+        } else {
+          state.entries.unshift(payload);
+          setStatus(`已新增令牌：${payload.label}`, 'success');
+        }
+        persistEntries();
+        renderVault();
+        resetForm();
+        tick();
+      } catch (error) {
+        setStatus(error.message || '保存失败，请检查输入内容。', 'error');
+      }
+    }
+
+    async function handleActions(event) {
+      const button = event.target.closest('button[data-action]');
+      if (!button) {
+        return;
+      }
+      const container = button.closest('[data-id]');
+      const entryId = container && container.dataset ? container.dataset.id : '';
+      const target = findEntryById(entryId);
+      if (!target) {
+        return;
+      }
+
+      const action = button.dataset.action;
+      if (action === 'edit') {
+        fillForm(target);
+        setStatus(`正在编辑令牌：${target.label}`, 'success');
+        return;
+      }
+      if (action === 'delete') {
+        handleDelete(entryId);
+        return;
+      }
+      if (action === 'copy') {
+        try {
+          const code = getCurrentCode(target, Date.now());
+          await copyText(code);
+          setStatus(`验证码已复制：${target.label}`, 'success');
+        } catch (error) {
+          setStatus(error.message || '复制失败。', 'error');
+        }
+      }
+    }
+
+    function exportEntries() {
+      if (state.entries.length === 0) {
+        setStatus('当前没有可导出的令牌。', 'error');
+        return;
+      }
+      const payload = {
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        entries: state.entries.map(stripRuntime)
+      };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      const stamp = new Date();
+      link.href = url;
+      link.download = `2fa-vault-${stamp.getFullYear()}${String(stamp.getMonth() + 1).padStart(2, '0')}${String(stamp.getDate()).padStart(2, '0')}-${String(stamp.getHours()).padStart(2, '0')}${String(stamp.getMinutes()).padStart(2, '0')}${String(stamp.getSeconds()).padStart(2, '0')}.json`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      setStatus(`已导出 ${state.entries.length} 个令牌。`, 'success');
+    }
+
+    async function handleImportChange(event) {
+      const file = event.target.files && event.target.files[0];
+      refs.importInput.value = '';
+      if (!file) {
+        return;
+      }
+      try {
+        const rawText = await file.text();
+        const parsed = JSON.parse(rawText);
+        const list = Array.isArray(parsed) ? parsed : Array.isArray(parsed.entries) ? parsed.entries : null;
+        if (!list) {
+          throw new Error('导入文件格式不正确，需为数组或包含 entries 数组。');
+        }
+        const importedEntries = list.map((entry, index) => normalizeEntry({ ...entry, id: createId() }, index));
+        state.entries = [...importedEntries, ...state.entries];
+        persistEntries();
+        renderVault();
+        tick();
+        setStatus(`导入成功：新增 ${importedEntries.length} 个令牌。`, 'success');
+      } catch (error) {
+        setStatus(error.message || '导入失败，请检查 JSON 格式。', 'error');
+      }
+    }
+
+    function clearAllEntries() {
+      if (state.entries.length === 0) {
+        setStatus('已经是空的了，没有什么可清空的。', 'error');
+        return;
+      }
+      const confirmed = window.confirm('确认清空当前浏览器中保存的全部令牌吗？此操作不可撤销。');
+      if (!confirmed) {
+        return;
+      }
+      state.entries = [];
+      state.runtime.clear();
+      resetForm();
+      persistEntries();
+      renderVault();
+      tick();
+      setStatus('已清空全部令牌。', 'success');
+    }
+
+    function bindEvents() {
+      refs.secretForm.addEventListener('submit', handleSave);
+      refs.resetButton.addEventListener('click', () => {
+        resetForm();
+        setStatus('表单已重置。', 'success');
+      });
+      refs.exportButton.addEventListener('click', exportEntries);
+      refs.importButton.addEventListener('click', () => refs.importInput.click());
+      refs.importInput.addEventListener('change', handleImportChange);
+      refs.clearAllButton.addEventListener('click', clearAllEntries);
+      refs.savedList.addEventListener('click', handleActions);
+      refs.tokenList.addEventListener('click', handleActions);
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) {
+          tick();
+        }
+      });
+    }
+
+    function init() {
+      runSelfTest();
+      state.entries = loadEntries();
+      bindEvents();
+      renderVault();
+      startTicker();
+      if (state.selfTestPassed && state.entries.length > 0) {
+        setStatus(`已从本地恢复 ${state.entries.length} 个令牌。`, 'success');
+      }
+    }
+
+    init();
+  </script>
+</body>
+</html>
