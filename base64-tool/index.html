@@ -1,0 +1,1158 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Base64 编解码工具</title>
+<style>
+  /* ===== Reset & Base ===== */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    height: 100%;
+    font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+    background: #0a0e17;
+    color: #c8d6e5;
+    overflow-x: hidden;
+  }
+
+  /* ===== Animated Grid Background ===== */
+  body::before {
+    content: '';
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background-image:
+      linear-gradient(rgba(0, 212, 255, 0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0, 212, 255, 0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* ===== Scanline overlay ===== */
+  body::after {
+    content: '';
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0, 212, 255, 0.008) 2px,
+      rgba(0, 212, 255, 0.008) 4px
+    );
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* ===== Glow orbs ===== */
+  .glow-orb {
+    position: fixed;
+    border-radius: 50%;
+    filter: blur(80px);
+    pointer-events: none;
+    z-index: 0;
+  }
+  .glow-orb-1 {
+    width: 400px; height: 400px;
+    background: radial-gradient(circle, rgba(0, 212, 255, 0.08), transparent);
+    top: -100px; right: -100px;
+    animation: orbFloat1 8s ease-in-out infinite alternate;
+  }
+  .glow-orb-2 {
+    width: 350px; height: 350px;
+    background: radial-gradient(circle, rgba(255, 0, 128, 0.06), transparent);
+    bottom: -80px; left: -80px;
+    animation: orbFloat2 10s ease-in-out infinite alternate;
+  }
+  .glow-orb-3 {
+    width: 300px; height: 300px;
+    background: radial-gradient(circle, rgba(123, 31, 162, 0.06), transparent);
+    top: 40%; left: 50%;
+    animation: orbFloat3 12s ease-in-out infinite alternate;
+  }
+
+  @keyframes orbFloat1 {
+    0%   { transform: translate(0, 0) scale(1); }
+    100% { transform: translate(-60px, 40px) scale(1.2); }
+  }
+  @keyframes orbFloat2 {
+    0%   { transform: translate(0, 0) scale(1); }
+    100% { transform: translate(50px, -30px) scale(1.3); }
+  }
+  @keyframes orbFloat3 {
+    0%   { transform: translate(-50%, -50%) scale(1); opacity: 0.6; }
+    100% { transform: translate(-40%, -60%) scale(1.4); opacity: 1; }
+  }
+
+  /* ===== Layout ===== */
+  .app-container {
+    position: relative;
+    z-index: 1;
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 30px 20px 60px;
+    min-height: 100vh;
+  }
+
+  /* ===== Header ===== */
+  .header {
+    text-align: center;
+    padding: 40px 0 36px;
+    position: relative;
+  }
+  .header::after {
+    content: '';
+    position: absolute;
+    bottom: 0; left: 10%; right: 10%;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(0, 212, 255, 0.4), transparent);
+  }
+  .logo-icon {
+    font-size: 42px;
+    display: block;
+    margin-bottom: 8px;
+    text-shadow: 0 0 30px rgba(0, 212, 255, 0.3);
+  }
+  .header h1 {
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: 6px;
+    text-transform: uppercase;
+    background: linear-gradient(135deg, #00d4ff, #7b1fa2, #ff0080);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    text-shadow: none;
+    filter: drop-shadow(0 0 20px rgba(0, 212, 255, 0.15));
+  }
+  .header .subtitle {
+    font-size: 13px;
+    color: rgba(0, 212, 255, 0.5);
+    letter-spacing: 8px;
+    margin-top: 8px;
+    font-weight: 300;
+  }
+
+  /* ===== Tabs ===== */
+  .tab-bar {
+    display: flex;
+    gap: 4px;
+    background: rgba(10, 14, 23, 0.8);
+    border: 1px solid rgba(0, 212, 255, 0.12);
+    border-radius: 12px;
+    padding: 4px;
+    margin: 28px 0 24px;
+    backdrop-filter: blur(10px);
+  }
+  .tab-btn {
+    flex: 1;
+    padding: 12px 16px;
+    border: none;
+    border-radius: 9px;
+    background: transparent;
+    color: rgba(200, 214, 229, 0.5);
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    letter-spacing: 1px;
+    position: relative;
+  }
+  .tab-btn:hover {
+    color: rgba(200, 214, 229, 0.8);
+    background: rgba(0, 212, 255, 0.04);
+  }
+  .tab-btn.active {
+    color: #00d4ff;
+    background: rgba(0, 212, 255, 0.08);
+    box-shadow: inset 0 0 20px rgba(0, 212, 255, 0.05);
+  }
+  .tab-btn.active::after {
+    content: '';
+    position: absolute;
+    bottom: -1px; left: 30%; right: 30%;
+    height: 2px;
+    background: #00d4ff;
+    border-radius: 2px;
+    box-shadow: 0 0 12px rgba(0, 212, 255, 0.4);
+  }
+
+  /* ===== Panels ===== */
+  .panel {
+    display: none;
+    animation: fadeSlideIn 0.35s ease;
+  }
+  .panel.active { display: block; }
+
+  @keyframes fadeSlideIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* ===== Card ===== */
+  .card {
+    background: rgba(12, 18, 34, 0.75);
+    border: 1px solid rgba(0, 212, 255, 0.10);
+    border-radius: 16px;
+    padding: 24px;
+    margin-bottom: 20px;
+    backdrop-filter: blur(12px);
+    box-shadow: 0 4px 32px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(0, 212, 255, 0.05);
+    transition: border-color 0.3s ease, box-shadow 0.3s ease;
+  }
+  .card:hover {
+    border-color: rgba(0, 212, 255, 0.18);
+  }
+  .card-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 3px;
+    color: rgba(0, 212, 255, 0.6);
+    margin-bottom: 14px;
+    font-weight: 500;
+  }
+  .card-label .badge {
+    font-size: 9px;
+    padding: 2px 10px;
+    border-radius: 20px;
+    background: rgba(0, 212, 255, 0.08);
+    border: 1px solid rgba(0, 212, 255, 0.15);
+    color: #00d4ff;
+    letter-spacing: 1px;
+  }
+
+  /* ===== Textarea ===== */
+  .code-area {
+    width: 100%;
+    min-height: 140px;
+    padding: 16px;
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(0, 212, 255, 0.08);
+    border-radius: 10px;
+    color: #c8d6e5;
+    font-family: inherit;
+    font-size: 14px;
+    line-height: 1.6;
+    resize: vertical;
+    outline: none;
+    transition: border-color 0.3s ease, box-shadow 0.3s ease;
+  }
+  .code-area:focus {
+    border-color: rgba(0, 212, 255, 0.35);
+    box-shadow: 0 0 24px rgba(0, 212, 255, 0.06);
+  }
+  .code-area::placeholder {
+    color: rgba(200, 214, 229, 0.2);
+  }
+  .code-area.result-area {
+    color: #00d4ff;
+    min-height: 80px;
+  }
+  .code-area.result-area.error {
+    color: #ff3355;
+    text-shadow: 0 0 12px rgba(255, 51, 85, 0.2);
+  }
+
+  /* ===== File upload area ===== */
+  .file-drop-zone {
+    border: 1px dashed rgba(0, 212, 255, 0.2);
+    border-radius: 10px;
+    padding: 40px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    background: rgba(0, 212, 255, 0.02);
+    position: relative;
+  }
+  .file-drop-zone:hover,
+  .file-drop-zone.dragover {
+    border-color: rgba(0, 212, 255, 0.4);
+    background: rgba(0, 212, 255, 0.04);
+    box-shadow: 0 0 30px rgba(0, 212, 255, 0.06);
+  }
+  .file-drop-zone .icon {
+    font-size: 36px;
+    display: block;
+    margin-bottom: 10px;
+    opacity: 0.6;
+  }
+  .file-drop-zone .text {
+    color: rgba(200, 214, 229, 0.4);
+    font-size: 13px;
+    letter-spacing: 1px;
+  }
+  .file-drop-zone .text strong {
+    color: rgba(0, 212, 255, 0.6);
+  }
+  .file-drop-zone input[type="file"] {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    opacity: 0;
+    cursor: pointer;
+  }
+  .file-info {
+    display: none;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    background: rgba(0, 212, 255, 0.04);
+    border: 1px solid rgba(0, 212, 255, 0.1);
+    border-radius: 8px;
+    margin-top: 12px;
+    font-size: 13px;
+  }
+  .file-info.show { display: flex; }
+  .file-info .file-icon { font-size: 20px; }
+  .file-info .file-name {
+    flex: 1;
+    color: rgba(200, 214, 229, 0.8);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .file-info .file-size {
+    color: rgba(0, 212, 255, 0.5);
+    font-size: 12px;
+  }
+  .file-info .file-remove {
+    background: none;
+    border: none;
+    color: rgba(255, 51, 85, 0.5);
+    cursor: pointer;
+    font-size: 16px;
+    padding: 0 4px;
+    transition: color 0.2s;
+  }
+  .file-info .file-remove:hover {
+    color: #ff3355;
+  }
+
+  /* ===== Button row ===== */
+  .btn-row {
+    display: flex;
+    gap: 10px;
+    margin-top: 16px;
+    flex-wrap: wrap;
+  }
+  .btn {
+    padding: 10px 24px;
+    border: none;
+    border-radius: 8px;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .btn-primary {
+    background: linear-gradient(135deg, rgba(0, 212, 255, 0.15), rgba(0, 212, 255, 0.05));
+    color: #00d4ff;
+    border: 1px solid rgba(0, 212, 255, 0.2);
+  }
+  .btn-primary:hover {
+    background: linear-gradient(135deg, rgba(0, 212, 255, 0.25), rgba(0, 212, 255, 0.10));
+    border-color: rgba(0, 212, 255, 0.4);
+    box-shadow: 0 0 24px rgba(0, 212, 255, 0.10);
+    transform: translateY(-1px);
+  }
+  .btn-primary:active {
+    transform: translateY(0);
+  }
+  .btn-secondary {
+    background: rgba(255, 255, 255, 0.03);
+    color: rgba(200, 214, 229, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+  }
+  .btn-secondary:hover {
+    background: rgba(255, 255, 255, 0.06);
+    color: rgba(200, 214, 229, 0.8);
+    border-color: rgba(255, 255, 255, 0.12);
+  }
+  .btn-danger {
+    background: rgba(255, 51, 85, 0.08);
+    color: rgba(255, 51, 85, 0.6);
+    border: 1px solid rgba(255, 51, 85, 0.1);
+  }
+  .btn-danger:hover {
+    background: rgba(255, 51, 85, 0.15);
+    color: #ff3355;
+    border-color: rgba(255, 51, 85, 0.2);
+  }
+  .btn-success {
+    background: rgba(0, 200, 117, 0.08);
+    color: rgba(0, 200, 117, 0.6);
+    border: 1px solid rgba(0, 200, 117, 0.1);
+  }
+  .btn-success:hover {
+    background: rgba(0, 200, 117, 0.15);
+    color: #00c875;
+    border-color: rgba(0, 200, 117, 0.2);
+  }
+  .btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+    transform: none !important;
+  }
+
+  /* ===== Char count ===== */
+  .char-count {
+    text-align: right;
+    font-size: 11px;
+    color: rgba(200, 214, 229, 0.2);
+    margin-top: 6px;
+    letter-spacing: 1px;
+  }
+  .char-count span {
+    color: rgba(0, 212, 255, 0.4);
+  }
+
+  /* ===== Toast ===== */
+  .toast-container {
+    position: fixed;
+    top: 24px;
+    right: 24px;
+    z-index: 999;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .toast {
+    padding: 12px 20px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-family: inherit;
+    letter-spacing: 0.5px;
+    animation: toastIn 0.3s ease, toastOut 0.3s ease 2.2s forwards;
+    backdrop-filter: blur(12px);
+    border: 1px solid;
+  }
+  .toast-success {
+    background: rgba(0, 200, 117, 0.1);
+    border-color: rgba(0, 200, 117, 0.15);
+    color: #00c875;
+    box-shadow: 0 4px 24px rgba(0, 200, 117, 0.06);
+  }
+  .toast-error {
+    background: rgba(255, 51, 85, 0.1);
+    border-color: rgba(255, 51, 85, 0.15);
+    color: #ff3355;
+    box-shadow: 0 4px 24px rgba(255, 51, 85, 0.06);
+  }
+  .toast-info {
+    background: rgba(0, 212, 255, 0.1);
+    border-color: rgba(0, 212, 255, 0.15);
+    color: #00d4ff;
+    box-shadow: 0 4px 24px rgba(0, 212, 255, 0.06);
+  }
+  @keyframes toastIn {
+    from { opacity: 0; transform: translateX(20px); }
+    to   { opacity: 1; transform: translateX(0); }
+  }
+  @keyframes toastOut {
+    from { opacity: 1; transform: translateX(0); }
+    to   { opacity: 0; transform: translateX(20px); }
+  }
+
+  /* ===== Status indicator ===== */
+  .status-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    color: rgba(200, 214, 229, 0.2);
+    margin-top: 12px;
+    letter-spacing: 1px;
+  }
+  .status-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: rgba(0, 212, 255, 0.15);
+    transition: background 0.3s, box-shadow 0.3s;
+  }
+  .status-dot.online {
+    background: #00d4ff;
+    box-shadow: 0 0 10px rgba(0, 212, 255, 0.4);
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  /* ===== Responsive ===== */
+  @media (max-width: 640px) {
+    .app-container { padding: 16px 12px 40px; }
+    .header h1 { font-size: 20px; letter-spacing: 4px; }
+    .header .subtitle { font-size: 11px; letter-spacing: 4px; }
+    .card { padding: 16px; }
+    .tab-btn { font-size: 12px; padding: 10px 8px; }
+    .btn { padding: 8px 16px; font-size: 12px; }
+    .code-area { min-height: 100px; font-size: 13px; }
+  }
+
+  /* ===== Scrollbar ===== */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: rgba(0, 0, 0, 0.2); }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(0, 212, 255, 0.2);
+    border-radius: 4px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(0, 212, 255, 0.3);
+  }
+
+  /* ===== Swap button ===== */
+  .swap-area {
+    display: flex;
+    justify-content: center;
+    margin: -8px 0 4px;
+  }
+  .swap-btn {
+    width: 40px; height: 40px;
+    border-radius: 50%;
+    border: 1px solid rgba(0, 212, 255, 0.15);
+    background: rgba(10, 14, 23, 0.9);
+    color: rgba(0, 212, 255, 0.5);
+    font-size: 18px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(8px);
+    z-index: 2;
+  }
+  .swap-btn:hover {
+    border-color: rgba(0, 212, 255, 0.3);
+    color: #00d4ff;
+    box-shadow: 0 0 20px rgba(0, 212, 255, 0.08);
+    transform: rotate(180deg);
+  }
+
+  /* ===== Progress bar for file ===== */
+  .progress-bar {
+    height: 2px;
+    background: rgba(0, 212, 255, 0.05);
+    border-radius: 2px;
+    margin-top: 8px;
+    overflow: hidden;
+    display: none;
+  }
+  .progress-bar.show { display: block; }
+  .progress-bar .fill {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, #00d4ff, #7b1fa2);
+    border-radius: 2px;
+    transition: width 0.3s ease;
+  }
+
+  /* ===== Output meta ===== */
+  .output-meta {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-top: 8px;
+    font-size: 11px;
+    color: rgba(200, 214, 229, 0.15);
+  }
+  .output-meta span {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .output-meta .val {
+    color: rgba(0, 212, 255, 0.3);
+  }
+
+  /* ===== PII ===== */
+  .text-glow {
+    text-shadow: 0 0 8px rgba(0, 212, 255, 0.08);
+  }
+</style>
+</head>
+<body>
+
+  <!-- Glow orbs -->
+  <div class="glow-orb glow-orb-1"></div>
+  <div class="glow-orb glow-orb-2"></div>
+  <div class="glow-orb glow-orb-3"></div>
+
+  <!-- Toast container -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <div class="app-container">
+
+    <!-- Header -->
+    <header class="header">
+      <span class="logo-icon">⌘</span>
+      <h1>Base64 工坊</h1>
+      <p class="subtitle">ENCODE · DECODE · TRANSFORM</p>
+    </header>
+
+    <!-- Tabs -->
+    <div class="tab-bar">
+      <button class="tab-btn active" data-tab="text">✧ 文本</button>
+      <button class="tab-btn" data-tab="file">✦ 文件</button>
+    </div>
+
+    <!-- ==================== TEXT TAB ==================== -->
+    <div class="panel active" id="tab-text">
+      <div class="card">
+        <div class="card-label">
+          <span>📄</span> 输入
+          <span class="badge" id="inputTypeBadge">自动检测</span>
+        </div>
+        <textarea class="code-area" id="inputText" placeholder="输入文本或 Base64 字符串 ...&#10;&#10;提示：粘贴内容后会自动识别类型"></textarea>
+        <div class="char-count">字符 <span id="inputChars">0</span></div>
+      </div>
+
+      <div class="swap-area">
+        <button class="swap-btn" id="swapBtn" title="交换输入/输出">⇅</button>
+      </div>
+
+      <div class="card">
+        <div class="card-label">
+          <span>⚡</span> 输出
+          <span class="badge" id="outputTypeBadge">等待转换</span>
+        </div>
+        <textarea class="code-area result-area" id="outputText" placeholder="转换结果将显示在这里 ..." readonly></textarea>
+        <div class="char-count">字符 <span id="outputChars">0</span></div>
+        <div class="output-meta" id="outputMeta" style="display:none;">
+          <span>原始长度 <span class="val" id="metaOriginalLen">0</span></span>
+          <span>│</span>
+          <span>转换后长度 <span class="val" id="metaResultLen">0</span></span>
+          <span>│</span>
+          <span>类型 <span class="val" id="metaType">—</span></span>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-primary" id="encodeBtn">⌃ 编码</button>
+          <button class="btn btn-primary" id="decodeBtn">⌄ 解码</button>
+          <button class="btn btn-secondary" id="copyBtn">📋 复制</button>
+          <button class="btn btn-secondary" id="clearBtn">✕ 清空</button>
+        </div>
+        <div class="status-bar">
+          <span class="status-dot online"></span>
+          <span>SYSTEM READY</span>
+          <span style="flex:1"></span>
+          <span id="statusText">等待操作</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== FILE TAB ==================== -->
+    <div class="panel" id="tab-file">
+      <div class="card">
+        <div class="card-label">
+          <span>📁</span> 上传文件
+          <span class="badge">BASE64</span>
+        </div>
+        <div class="file-drop-zone" id="fileDropZone">
+          <span class="icon">📂</span>
+          <div class="text">拖拽文件到此处 或 <strong>点击选择</strong></div>
+          <input type="file" id="fileInput">
+        </div>
+        <div class="file-info" id="fileInfo">
+          <span class="file-icon">📄</span>
+          <span class="file-name" id="fileName">—</span>
+          <span class="file-size" id="fileSize">—</span>
+          <button class="file-remove" id="fileRemove">✕</button>
+        </div>
+        <div class="progress-bar" id="fileProgress">
+          <div class="fill" id="fileProgressFill"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-label">
+          <span>⚡</span> Base64 结果
+        </div>
+        <textarea class="code-area result-area" id="fileOutput" placeholder="文件的 Base64 编码将显示在这里 ..." readonly></textarea>
+        <div class="char-count">字符 <span id="fileOutputChars">0</span></div>
+        <div class="btn-row">
+          <button class="btn btn-primary" id="fileEncodeBtn">⌃ 编码为 Base64</button>
+          <button class="btn btn-success" id="fileCopyBtn">📋 复制结果</button>
+          <button class="btn btn-secondary" id="fileClearBtn">✕ 清空</button>
+          <button class="btn btn-secondary" id="fileDownloadBtn">⬇ 下载 .txt</button>
+        </div>
+        <div class="status-bar">
+          <span class="status-dot online"></span>
+          <span>FILE MODE</span>
+          <span style="flex:1"></span>
+          <span id="fileStatusText">未选择文件</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div style="text-align:center;margin-top:32px;font-size:11px;color:rgba(200,214,229,0.08);letter-spacing:2px;">
+      BASE64 WORKSHOP · v1.0
+    </div>
+  </div>
+
+<script>
+(function() {
+  'use strict';
+
+  // ===== DOM refs =====
+  const $ = (s, ctx = document) => ctx.querySelector(s);
+  const $$ = (s, ctx = document) => [...ctx.querySelectorAll(s)];
+
+  const inputText   = $('#inputText');
+  const outputText  = $('#outputText');
+  const inputChars  = $('#inputChars');
+  const outputChars = $('#outputChars');
+  const encodeBtn   = $('#encodeBtn');
+  const decodeBtn   = $('#decodeBtn');
+  const copyBtn     = $('#copyBtn');
+  const clearBtn    = $('#clearBtn');
+  const swapBtn     = $('#swapBtn');
+  const statusText  = $('#statusText');
+  const inputTypeBadge = $('#inputTypeBadge');
+  const outputTypeBadge = $('#outputTypeBadge');
+  const outputMeta  = $('#outputMeta');
+  const metaOriginalLen = $('#metaOriginalLen');
+  const metaResultLen   = $('#metaResultLen');
+  const metaType    = $('#metaType');
+
+  // File tab
+  const fileInput     = $('#fileInput');
+  const fileDropZone  = $('#fileDropZone');
+  const fileInfo      = $('#fileInfo');
+  const fileName      = $('#fileName');
+  const fileSize      = $('#fileSize');
+  const fileRemove    = $('#fileRemove');
+  const fileEncodeBtn = $('#fileEncodeBtn');
+  const fileOutput    = $('#fileOutput');
+  const fileOutputChars = $('#fileOutputChars');
+  const fileCopyBtn   = $('#fileCopyBtn');
+  const fileClearBtn  = $('#fileClearBtn');
+  const fileDownloadBtn = $('#fileDownloadBtn');
+  const fileStatusText  = $('#fileStatusText');
+  const fileProgress    = $('#fileProgress');
+  const fileProgressFill = $('#fileProgressFill');
+
+  const toastContainer = $('#toastContainer');
+
+  // ===== State =====
+  let selectedFile = null;
+  let fileResult = '';
+
+  // ===== Toast =====
+  function showToast(message, type = 'info') {
+    const el = document.createElement('div');
+    el.className = `toast toast-${type}`;
+    el.textContent = message;
+    toastContainer.appendChild(el);
+    setTimeout(() => { if (el.parentNode) el.remove(); }, 2600);
+  }
+
+  // ===== Detect input type =====
+  function detectType(str) {
+    if (!str || str.trim().length === 0) return 'empty';
+    // Check if valid base64
+    const trimmed = str.trim();
+    // Base64 pattern: allow padding = or ==, allow whitespace
+    const b64Regex = /^[A-Za-z0-9+/]*={0,2}$/;
+    // Check if it looks like base64 (length multiple of 4-ish, only valid chars)
+    const lines = trimmed.split('\n').filter(l => l.trim().length > 0);
+    const allLinesB64 = lines.every(l => b64Regex.test(l.trim()));
+    // Heuristic: if every non-empty line is valid base64 and total length >= 4
+    const totalLen = lines.reduce((s, l) => s + l.trim().length, 0);
+    if (allLinesB64 && lines.length > 0 && totalLen >= 4) {
+      // Try to decode to confirm
+      try {
+        const decoded = atob(trimmed);
+        // If decoded is valid UTF-8-ish text, still mark as base64
+        return 'base64';
+      } catch {
+        // Not valid base64
+      }
+    }
+    return 'text';
+  }
+
+  // ===== Update input badge =====
+  function updateInputBadge() {
+    const val = inputText.value;
+    const type = detectType(val);
+    const badges = {
+      text:   { label: '文本', color: 'rgba(0, 212, 255, 0.6)' },
+      base64: { label: 'Base64', color: 'rgba(123, 31, 162, 0.6)' },
+      empty:  { label: '空', color: 'rgba(200, 214, 229, 0.2)' }
+    };
+    const info = badges[type] || badges.empty;
+    inputTypeBadge.textContent = info.label;
+    inputTypeBadge.style.color = info.color;
+    inputTypeBadge.style.borderColor = info.color;
+    inputTypeBadge.style.background = info.color.replace('0.6', '0.08').replace('0.2', '0.04');
+
+    // Update char count
+    inputChars.textContent = val.length;
+  }
+
+  // ===== Encode =====
+  function encode(str) {
+    try {
+      // Use TextEncoder for broader Unicode support
+      const bytes = new TextEncoder().encode(str);
+      let binary = '';
+      for (let i = 0; i < bytes.length; i++) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      return btoa(binary);
+    } catch (e) {
+      throw new Error('编码失败: ' + e.message);
+    }
+  }
+
+  // ===== Decode =====
+  function decode(str) {
+    try {
+      const cleaned = str.trim();
+      const binary = atob(cleaned);
+      // Try UTF-8 decode
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i);
+      }
+      return new TextDecoder().decode(bytes);
+    } catch (e) {
+      throw new Error('解码失败: 无效的 Base64 字符串');
+    }
+  }
+
+  // ===== Perform conversion =====
+  function performEncode() {
+    const val = inputText.value;
+    if (!val) {
+      showToast('请输入要编码的文本', 'error');
+      return;
+    }
+    try {
+      const result = encode(val);
+      outputText.value = result;
+      outputText.classList.remove('error');
+      outputChars.textContent = result.length;
+      outputTypeBadge.textContent = 'Base64';
+      outputTypeBadge.style.color = 'rgba(123, 31, 162, 0.6)';
+      outputTypeBadge.style.borderColor = 'rgba(123, 31, 162, 0.15)';
+      outputTypeBadge.style.background = 'rgba(123, 31, 162, 0.08)';
+      showMeta(val.length, result.length, '编码');
+      statusText.textContent = '✓ 编码完成';
+      showToast('编码成功', 'success');
+    } catch (e) {
+      outputText.value = '⚠ 错误: ' + e.message;
+      outputText.classList.add('error');
+      outputChars.textContent = 0;
+      outputTypeBadge.textContent = '错误';
+      outputTypeBadge.style.color = 'rgba(255, 51, 85, 0.6)';
+      statusText.textContent = '✕ 编码失败';
+      showToast(e.message, 'error');
+    }
+  }
+
+  function performDecode() {
+    const val = inputText.value;
+    if (!val) {
+      showToast('请输入要解码的 Base64 字符串', 'error');
+      return;
+    }
+    try {
+      const result = decode(val);
+      outputText.value = result;
+      outputText.classList.remove('error');
+      outputChars.textContent = result.length;
+      outputTypeBadge.textContent = '文本';
+      outputTypeBadge.style.color = 'rgba(0, 212, 255, 0.6)';
+      outputTypeBadge.style.borderColor = 'rgba(0, 212, 255, 0.15)';
+      outputTypeBadge.style.background = 'rgba(0, 212, 255, 0.08)';
+      showMeta(val.trim().length, result.length, '解码');
+      statusText.textContent = '✓ 解码完成';
+      showToast('解码成功', 'success');
+    } catch (e) {
+      outputText.value = '⚠ 错误: ' + e.message;
+      outputText.classList.add('error');
+      outputChars.textContent = 0;
+      outputTypeBadge.textContent = '错误';
+      outputTypeBadge.style.color = 'rgba(255, 51, 85, 0.6)';
+      statusText.textContent = '✕ 解码失败';
+      showToast(e.message, 'error');
+    }
+  }
+
+  function showMeta(orig, result, type) {
+    outputMeta.style.display = 'flex';
+    metaOriginalLen.textContent = orig;
+    metaResultLen.textContent = result;
+    metaType.textContent = type;
+  }
+
+  // ===== Copy =====
+  async function copyResult() {
+    const val = outputText.value;
+    if (!val) {
+      showToast('没有可复制的内容', 'error');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(val);
+      showToast('已复制到剪贴板', 'success');
+      statusText.textContent = '✓ 已复制';
+    } catch {
+      // Fallback
+      outputText.select();
+      document.execCommand('copy');
+      showToast('已复制到剪贴板', 'success');
+    }
+  }
+
+  // ===== Clear =====
+  function clearAll() {
+    inputText.value = '';
+    outputText.value = '';
+    outputText.classList.remove('error');
+    inputChars.textContent = '0';
+    outputChars.textContent = '0';
+    outputMeta.style.display = 'none';
+    updateInputBadge();
+    outputTypeBadge.textContent = '等待转换';
+    outputTypeBadge.style.color = '';
+    outputTypeBadge.style.borderColor = '';
+    outputTypeBadge.style.background = '';
+    statusText.textContent = '已清空';
+  }
+
+  // ===== Swap =====
+  function swapIO() {
+    const inVal = inputText.value;
+    const outVal = outputText.value;
+    if (!outVal || outputText.classList.contains('error')) {
+      showToast('输出无效，无法交换', 'error');
+      return;
+    }
+    inputText.value = outVal;
+    outputText.value = '';
+    outputText.classList.remove('error');
+    outputChars.textContent = '0';
+    outputMeta.style.display = 'none';
+    outputTypeBadge.textContent = '等待转换';
+    outputTypeBadge.style.color = '';
+    outputTypeBadge.style.borderColor = '';
+    outputTypeBadge.style.background = '';
+    updateInputBadge();
+    statusText.textContent = '已交换';
+    showToast('已交换输入/输出', 'info');
+  }
+
+  // ===== Auto-detect on input =====
+  let autoTimer = null;
+  function onInputChange() {
+    updateInputBadge();
+    // Auto-detect: if input looks like base64, suggest decode
+    const type = detectType(inputText.value);
+    if (type === 'base64') {
+      outputTypeBadge.textContent = '⟳ 可解码';
+      outputTypeBadge.style.color = 'rgba(123, 31, 162, 0.4)';
+      outputTypeBadge.style.borderColor = 'rgba(123, 31, 162, 0.1)';
+      outputTypeBadge.style.background = 'rgba(123, 31, 162, 0.04)';
+      statusText.textContent = '检测到 Base64，点击「解码」';
+    } else if (type === 'text' && inputText.value.trim()) {
+      outputTypeBadge.textContent = '⟳ 可编码';
+      outputTypeBadge.style.color = 'rgba(0, 212, 255, 0.4)';
+      outputTypeBadge.style.borderColor = 'rgba(0, 212, 255, 0.1)';
+      outputTypeBadge.style.background = 'rgba(0, 212, 255, 0.04)';
+      statusText.textContent = '检测到文本，点击「编码」';
+    } else {
+      outputTypeBadge.textContent = '等待输入';
+      outputTypeBadge.style.color = '';
+      outputTypeBadge.style.borderColor = '';
+      outputTypeBadge.style.background = '';
+      statusText.textContent = '等待操作';
+    }
+  }
+
+  // ===== Tab switching =====
+  $$('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      $$('.tab-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      $$('.panel').forEach(p => p.classList.remove('active'));
+      const target = document.getElementById('tab-' + btn.dataset.tab);
+      if (target) target.classList.add('active');
+    });
+  });
+
+  // ===== File handling =====
+  function handleFile(file) {
+    if (!file) return;
+    selectedFile = file;
+    fileName.textContent = file.name;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    let sz = file.size;
+    let si = 0;
+    while (sz >= 1024 && si < sizes.length - 1) { sz /= 1024; si++; }
+    fileSize.textContent = sz.toFixed(1) + ' ' + sizes[si];
+    fileInfo.classList.add('show');
+    fileStatusText.textContent = `已选择: ${file.name}`;
+    // Auto-encode preview
+    fileProgress.classList.add('show');
+    fileProgressFill.style.width = '60%';
+    // Read file
+    const reader = new FileReader();
+    reader.onprogress = (e) => {
+      if (e.lengthComputable) {
+        const pct = Math.round((e.loaded / e.total) * 80);
+        fileProgressFill.style.width = pct + '%';
+      }
+    };
+    reader.onload = () => {
+      fileProgressFill.style.width = '90%';
+      const data = reader.result;
+      // data is data:...;base64,....  extract the base64 part
+      const b64 = data.split(',')[1] || '';
+      fileResult = b64;
+      fileOutput.value = b64;
+      fileOutputChars.textContent = b64.length;
+      fileProgressFill.style.width = '100%';
+      setTimeout(() => {
+        fileProgress.classList.remove('show');
+        fileProgressFill.style.width = '0%';
+      }, 500);
+      fileStatusText.textContent = `✓ 编码完成 · ${b64.length} 字符`;
+      showToast(`文件 "${file.name}" 编码成功`, 'success');
+    };
+    reader.onerror = () => {
+      fileProgress.classList.remove('show');
+      fileProgressFill.style.width = '0%';
+      fileStatusText.textContent = '✕ 读取失败';
+      showToast('文件读取失败', 'error');
+    };
+    reader.readAsDataURL(file);
+  }
+
+  fileDropZone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    fileDropZone.classList.add('dragover');
+  });
+  fileDropZone.addEventListener('dragleave', () => {
+    fileDropZone.classList.remove('dragover');
+  });
+  fileDropZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    fileDropZone.classList.remove('dragover');
+    if (e.dataTransfer.files.length > 0) {
+      handleFile(e.dataTransfer.files[0]);
+    }
+  });
+  fileInput.addEventListener('change', () => {
+    if (fileInput.files.length > 0) {
+      handleFile(fileInput.files[0]);
+    }
+  });
+  fileRemove.addEventListener('click', () => {
+    selectedFile = null;
+    fileResult = '';
+    fileInfo.classList.remove('show');
+    fileInput.value = '';
+    fileOutput.value = '';
+    fileOutputChars.textContent = '0';
+    fileStatusText.textContent = '未选择文件';
+  });
+
+  fileEncodeBtn.addEventListener('click', () => {
+    if (!selectedFile) {
+      showToast('请先选择一个文件', 'error');
+      return;
+    }
+    // Re-encode (in case file is already loaded, re-read)
+    handleFile(selectedFile);
+  });
+
+  fileCopyBtn.addEventListener('click', async () => {
+    if (!fileResult) {
+      showToast('没有可复制的内容', 'error');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(fileResult);
+      showToast('已复制到剪贴板', 'success');
+    } catch {
+      fileOutput.select();
+      document.execCommand('copy');
+      showToast('已复制到剪贴板', 'success');
+    }
+  });
+
+  fileClearBtn.addEventListener('click', () => {
+    selectedFile = null;
+    fileResult = '';
+    fileInfo.classList.remove('show');
+    fileInput.value = '';
+    fileOutput.value = '';
+    fileOutputChars.textContent = '0';
+    fileStatusText.textContent = '未选择文件';
+  });
+
+  fileDownloadBtn.addEventListener('click', () => {
+    if (!fileResult) {
+      showToast('没有可下载的内容', 'error');
+      return;
+    }
+    const baseName = selectedFile ? selectedFile.name.replace(/\.[^.]+$/, '') : 'base64';
+    const blob = new Blob([fileResult], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${baseName}.b64.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showToast('文件已下载', 'success');
+  });
+
+  // ===== Bind events =====
+  encodeBtn.addEventListener('click', performEncode);
+  decodeBtn.addEventListener('click', performDecode);
+  copyBtn.addEventListener('click', copyResult);
+  clearBtn.addEventListener('click', clearAll);
+  swapBtn.addEventListener('click', swapIO);
+
+  inputText.addEventListener('input', onInputChange);
+
+  // Keyboard shortcuts
+  document.addEventListener('keydown', (e) => {
+    // Ctrl+Enter to encode, Shift+Enter to decode
+    if (e.ctrlKey && e.key === 'Enter') {
+      e.preventDefault();
+      performEncode();
+    }
+    if (e.shiftKey && e.key === 'Enter') {
+      e.preventDefault();
+      performDecode();
+    }
+  });
+
+  // ===== Auto-detect on paste =====
+  inputText.addEventListener('paste', () => {
+    setTimeout(updateInputBadge, 50);
+  });
+
+  // ===== Init =====
+  updateInputBadge();
+  showToast('系统就绪 ✓', 'info');
+
+})();
+</script>
+</body>
+</html>
