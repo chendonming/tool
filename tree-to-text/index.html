@@ -31,6 +31,7 @@
     <button class="tool-btn primary" id="copyBtn" title="复制 Unicode 文本">📋 复制</button>
     <button class="tool-btn" id="exportBtn" title="导出 JSON">↓ JSON</button>
     <button class="tool-btn" id="importBtn" title="从 JSON 导入">↑ JSON</button>
+    <button class="tool-btn" id="inputJsonBtn" title="输入 JSON">📝 输入 JSON</button>
     <input type="file" id="importFileInput" accept=".json" style="display:none">
   </div>
 
@@ -60,6 +61,26 @@
     </section>
   </div>
 
+</div>
+
+<!-- JSON 输入模态窗口 -->
+<div class="modal-overlay" id="jsonModal">
+  <div class="modal-box">
+    <div class="modal-header">
+      <span class="modal-title">📝 输入 JSON</span>
+      <button class="modal-close-btn" id="modalCloseBtn" title="关闭">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="editor-container" id="editorContainer">
+        <div class="editor-loading">加载编辑器...</div>
+      </div>
+    </div>
+    <div class="modal-error" id="modalError" style="display:none"></div>
+    <div class="modal-footer">
+      <button class="tool-btn" id="modalCancelBtn">取消</button>
+      <button class="tool-btn primary" id="modalImportBtn">✅ 导入</button>
+    </div>
+  </div>
 </div>
 
 <script type="module" src="app.js"></script>
