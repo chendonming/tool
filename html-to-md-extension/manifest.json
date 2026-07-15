@@ -11,7 +11,7 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["content-script.js"],
+      "js": ["vendor/turndown.js", "content-script.js"],
       "css": ["styles.css"],
       "run_at": "document_idle"
     }

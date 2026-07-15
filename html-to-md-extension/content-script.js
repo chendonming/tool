@@ -5,6 +5,8 @@
   let currentHovered = null;
   let pickerTooltip = null;
 
+  // TurndownService loaded via vendor/turndown.js (listed first in manifest)
+
   // Listen for commands from background service worker
   chrome.runtime.onMessage.addListener((request) => {
     if (request.command === 'convert-selection') {
@@ -65,21 +67,46 @@
     return el.value || '';
   }
 
-  // ── Shared: convert HTML → Markdown via background worker ──────────────
+  // ── Convert HTML → Markdown ────────────────────────────────────────────
+
+  function htmlToMarkdown(html) {
+    const turndownService = new TurndownService({
+      headingStyle: 'atx',
+      codeBlockStyle: 'fenced',
+      emDelimiter: '*',
+      bulletListMarker: '-'
+    });
+
+    // Custom rule: fenced code blocks with language detection
+    turndownService.addRule('fencedCodeBlock', {
+      filter: (node) => {
+        return node.nodeName === 'PRE' && node.firstChild?.nodeName === 'CODE';
+      },
+      replacement: (content, node) => {
+        const code = node.querySelector('code');
+        const codeContent = code ? code.textContent : node.textContent;
+        let lang = '';
+        if (code?.className) {
+          const m = code.className.match(/language-(\w+)/);
+          if (m) lang = m[1];
+        }
+        return '\n```' + lang + '\n' + codeContent + '\n```\n';
+      },
+      priority: 100
+    });
+
+    return turndownService.turndown(html);
+  }
 
   function convertAndCopy(html) {
-    chrome.runtime.sendMessage({ action: 'convert', html }, (response) => {
-      if (chrome.runtime.lastError) {
-        showToast('Error: ' + chrome.runtime.lastError.message, 'error');
-        return;
-      }
-      if (response && response.markdown) {
-        copyToClipboard(response.markdown);
-        showToast('Copied as Markdown', 'success');
-      } else {
-        showToast('Conversion failed', 'error');
-      }
-    });
+    try {
+      const markdown = htmlToMarkdown(html);
+      copyToClipboard(markdown);
+      showToast('Copied as Markdown', 'success');
+    } catch (e) {
+      showToast('Conversion failed', 'error');
+      console.error('Markdown Grabber conversion error:', e);
+    }
   }
 
   // ── Clipboard: write via hidden textarea + execCommand ─────────────────
@@ -166,11 +193,7 @@
 
     const toast = document.createElement('div');
     toast.id = '__mdg-toast';
-
-    const label = document.createElement('span');
-    label.textContent = msg;
-    toast.appendChild(label);
-
+    toast.textContent = msg;
     toast.className = '__mdg-toast--' + (type || 'info');
     document.body.appendChild(toast);
 
