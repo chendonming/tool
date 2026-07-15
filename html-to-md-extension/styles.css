@@ -1,0 +1,44 @@
+/* Element picker tooltip */
+#__mdg-tooltip {
+  position: fixed;
+  z-index: 2147483647;
+  background: #4338ca;
+  color: #fff;
+  font-size: 12px;
+  font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+  padding: 3px 10px;
+  border-radius: 4px;
+  pointer-events: none;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+  line-height: 1.6;
+}
+
+/* Toast notification */
+#__mdg-toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 2147483647;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  color: #fff;
+  transition: opacity 0.3s ease;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+  line-height: 1.4;
+  max-width: 360px;
+}
+#__mdg-toast.__mdg-toast--success {
+  background: #059669;
+}
+#__mdg-toast.__mdg-toast--warning {
+  background: #d97706;
+}
+#__mdg-toast.__mdg-toast--error {
+  background: #dc2626;
+}
+.__mdg-toast--fadeout {
+  opacity: 0 !important;
+}
