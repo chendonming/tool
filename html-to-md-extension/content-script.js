@@ -5,6 +5,19 @@
   let currentHovered = null;
   let pickerTooltip = null;
 
+  // ── Debug mode ───────────────────────────────────────────────────────────
+  let debugMode = false;
+
+  chrome.storage.sync.get('debugMode', (data) => {
+    debugMode = !!data.debugMode;
+  });
+
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'sync' && changes.debugMode) {
+      debugMode = !!changes.debugMode.newValue;
+    }
+  });
+
   // TurndownService loaded via vendor/turndown.js (listed first in manifest)
 
   // Listen for commands from background service worker
@@ -47,7 +60,7 @@
       return;
     }
 
-    convertAndCopy(html);
+    convertAndCopy(html, { source: 'selection' });
   }
 
   function isInputOrTextarea(range) {
@@ -98,15 +111,75 @@
     return turndownService.turndown(html);
   }
 
-  function convertAndCopy(html) {
+  function convertAndCopy(html, extra) {
     try {
       const markdown = htmlToMarkdown(html);
       copyToClipboard(markdown);
       showToast('Copied as Markdown', 'success');
+      if (debugMode) saveDebugRecord({ source: extra?.source || 'selection', html, markdown, element: extra?.element });
     } catch (e) {
       showToast('Conversion failed', 'error');
       console.error('Markdown Grabber conversion error:', e);
     }
+  }
+
+  // ── Debug helpers ────────────────────────────────────────────────────────
+
+  function getCssSelector(el) {
+    const path = [];
+    while (el && el.nodeType === 1) {
+      let sel = el.tagName.toLowerCase();
+      if (el.id) {
+        sel += '#' + el.id;
+        path.unshift(sel);
+        break;
+      }
+      const parent = el.parentElement;
+      if (parent) {
+        const siblings = Array.from(parent.children);
+        const idx = siblings.indexOf(el);
+        if (idx >= 0) {
+          const sameTag = siblings.filter(function (s) { return s.tagName === el.tagName; });
+          if (sameTag.length > 1) {
+            sel += ':nth-child(' + (idx + 1) + ')';
+          }
+        }
+      }
+      path.unshift(sel);
+      el = parent;
+    }
+    return path.join(' > ');
+  }
+
+  function saveDebugRecord(rec) {
+    var record = {
+      timestamp: Date.now(),
+      source: rec.source,
+      url: window.location.href,
+      cssSelector: rec.element ? getCssSelector(rec.element) : '',
+      html: rec.html,
+      markdown: rec.markdown
+    };
+
+    console.group(
+      '%c📝 MD Grabber Debug %c' + new Date().toLocaleTimeString(),
+      'font-weight:bold;color:#4338ca',
+      'font-weight:normal;color:#64748b'
+    );
+    console.log('Source:', record.source);
+    console.log('URL:', record.url);
+    if (record.cssSelector) console.log('CSS Selector:', record.cssSelector);
+    console.log('HTML (%d chars):', record.html.length);
+    console.log(record.html);
+    console.log('Markdown (%d chars):', record.markdown.length);
+    console.log(record.markdown);
+    console.groupEnd();
+
+    chrome.storage.local.get('debugHistory', function (data) {
+      var history = data.debugHistory || [];
+      history.unshift(record);
+      chrome.storage.local.set({ debugHistory: history });
+    });
   }
 
   // ── Clipboard: write via hidden textarea + execCommand ─────────────────
@@ -175,7 +248,7 @@
     stopElementPicker();
 
     if (html && html.trim()) {
-      convertAndCopy(html);
+      convertAndCopy(html, { source: 'picker', element: target });
     }
   }
 
