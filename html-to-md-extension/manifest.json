@@ -19,8 +19,8 @@
   "commands": {
     "convert-selection": {
       "suggested_key": {
-        "default": "Ctrl+Shift+M",
-        "mac": "Command+Shift+M"
+        "default": "Ctrl+M",
+        "mac": "Command+M"
       },
       "description": "Convert selected text to Markdown"
     },
